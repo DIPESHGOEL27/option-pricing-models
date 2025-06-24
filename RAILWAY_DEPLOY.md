@@ -12,21 +12,25 @@
 ## Configuration
 
 Railway will automatically:
+
 - Detect Python app
 - Install requirements.txt
 - Run with gunicorn
 - Assign a public URL
 
 ## Environment Variables (if needed)
+
 - `PORT` - Automatically set by Railway
 - `PYTHON_VERSION` - Set to `3.12.7` (optional)
 
 ## Expected URL Structure
+
 - Main app: `https://your-app-name.up.railway.app/`
 - API status: `https://your-app-name.up.railway.app/api/status`
 - Pricing API: `https://your-app-name.up.railway.app/api/price`
 
 ## Benefits over Vercel
+
 - 512MB size limit (vs 250MB)
 - Better for ML/data science apps
 - Persistent storage options

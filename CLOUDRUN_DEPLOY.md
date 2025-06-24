@@ -1,12 +1,14 @@
 # Google Cloud Run Deployment Guide
 
 ## Prerequisites
+
 1. Install [Google Cloud CLI](https://cloud.google.com/sdk/docs/install)
 2. Create a Google Cloud account (free $300 credits)
 
 ## Deployment Steps
 
 ### 1. Setup
+
 ```bash
 # Login to Google Cloud
 gcloud auth login
@@ -23,6 +25,7 @@ gcloud services enable run.googleapis.com
 ```
 
 ### 2. Deploy
+
 ```bash
 # Build and deploy in one command
 gcloud run deploy option-pricing-models \
@@ -40,6 +43,7 @@ gcloud run deploy --image gcr.io/option-pricing-models/option-pricing-app --plat
 ```
 
 ### 3. Benefits
+
 - **2GB RAM** (vs 250MB Vercel limit)
 - **Serverless scaling**
 - **Free tier**: 2 million requests/month
@@ -48,12 +52,15 @@ gcloud run deploy --image gcr.io/option-pricing-models/option-pricing-app --plat
 - **Environment variables**
 
 ### 4. Cost
+
 - Free tier covers most usage
 - Pay per request after free tier
 - Much cheaper than dedicated servers
 
 ## Alternative: Cloud Run Jobs
+
 For batch processing or model training:
+
 ```bash
 gcloud run jobs create option-pricing-job \
   --image gcr.io/option-pricing-models/option-pricing-app \
