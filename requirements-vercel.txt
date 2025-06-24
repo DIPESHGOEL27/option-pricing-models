@@ -1,0 +1,11 @@
+# Lightweight Requirements for Vercel Deployment
+# This version excludes heavy ML dependencies to stay under 250MB limit
+
+Flask>=2.3.0,<4.0.0
+numpy>=1.24.0,<2.0.0
+scipy>=1.9.0,<2.0.0
+pandas>=1.5.0,<3.0.0
+requests>=2.31.0,<3.0.0
+gunicorn>=20.1.0,<22.0.0
+plotly>=5.17.0,<6.0.0
+yfinance>=0.2.0,<1.0.0
