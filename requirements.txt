@@ -1,22 +1,12 @@
-# Core dependencies for basic option pricing
+# Generated requirements for light deployment
+# Use toggle_features.py to change deployment mode
+
 Flask>=2.3.0,<4.0.0
 numpy>=1.24.0,<2.0.0
 scipy>=1.9.0,<2.0.0
 pandas>=1.5.0,<3.0.0
 requests>=2.31.0,<3.0.0
 gunicorn>=20.1.0,<22.0.0
-
-# Optional: Lightweight plotting (comment out if size is still an issue)
-matplotlib>=3.6.0,<4.0.0
 plotly>=5.17.0,<6.0.0
-
-# Optional: Advanced features (comment out if size is an issue)
-scikit-learn>=1.1.0,<2.0.0
 yfinance>=0.2.0,<1.0.0
-joblib>=1.2.0,<2.0.0
-
-# Optional: Heavy dependencies (comment out for smaller deployment)
-# seaborn>=0.12.0,<1.0.0
-# statsmodels>=0.13.0,<1.0.0
-# aiohttp>=3.8.0,<4.0.0
-# cvxpy>=1.2.0,<2.0.0
+matplotlib>=3.6.0,<4.0.0

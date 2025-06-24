@@ -1,0 +1,12 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "python main.py"
+
+[build.env]
+NIXPACKS_PYTHON_VERSION = "3.12.7"
+
+[deploy.env]
+PYTHONPATH = "/app"
+PORT = "8000"
