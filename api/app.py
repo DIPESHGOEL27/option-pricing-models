@@ -15,7 +15,10 @@ import plotly.express as px
 from plotly.utils import PlotlyJSONEncoder
 
 # Import market data provider
-from market_data import MarketDataProvider, VolatilityEstimator
+try:
+    from .market_data import MarketDataProvider, VolatilityEstimator
+except ImportError:
+    from market_data import MarketDataProvider, VolatilityEstimator
 
 # Import our advanced modules
 try:
