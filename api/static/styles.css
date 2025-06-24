@@ -17,7 +17,7 @@
   --box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
   --box-shadow-hover: 0 8px 15px rgba(0, 0, 0, 0.4);
   --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  
+
   /* Override Bootstrap CSS variables for dark theme */
   --bs-body-color: #ffffff !important;
   --bs-body-bg: #1a1a1a !important;
@@ -42,12 +42,26 @@ body {
 }
 
 /* Specific element overrides */
-h1, h2, h3, h4, h5, h6,
-.h1, .h2, .h3, .h4, .h5, .h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.h1,
+.h2,
+.h3,
+.h4,
+.h5,
+.h6 {
   color: var(--text-primary) !important;
 }
 
-p, span, div, label, small {
+p,
+span,
+div,
+label,
+small {
   color: var(--text-primary) !important;
 }
 
@@ -1235,4 +1249,114 @@ body::before {
     background: white !important;
     color: black !important;
   }
+}
+
+/* Model Selection Button States */
+.model-btn {
+  position: relative;
+  transition: var(--transition);
+  border: none;
+  font-weight: 500;
+  overflow: hidden;
+}
+
+.model-btn.active {
+  background: var(--gradient-primary) !important;
+  color: white !important;
+  box-shadow: var(--box-shadow);
+  transform: translateY(-1px);
+}
+
+.model-btn.inactive {
+  background: var(--secondary-bg) !important;
+  color: var(--text-secondary) !important;
+  border: 1px solid var(--border-color);
+}
+
+.model-btn.inactive:hover {
+  background: var(--card-bg) !important;
+  color: var(--text-primary) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.model-btn::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.1),
+    transparent
+  );
+  transition: left 0.5s;
+}
+
+.model-btn.active::before {
+  left: 100%;
+}
+
+/* Model Button Group Styling */
+.model-btn-group {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: var(--box-shadow);
+}
+
+.model-btn-group .model-btn:first-child {
+  border-top-left-radius: 12px;
+  border-bottom-left-radius: 12px;
+}
+
+.model-btn-group .model-btn:last-child {
+  border-top-right-radius: 12px;
+  border-bottom-right-radius: 12px;
+}
+
+.model-btn-group .model-btn + .model-btn {
+  border-left: 1px solid var(--border-color);
+}
+
+/* Enhanced Model Button Focus and Active States */
+.model-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.4);
+}
+
+.model-btn.active:focus {
+  box-shadow: var(--box-shadow), 0 0 0 3px rgba(102, 126, 234, 0.4);
+}
+
+/* Pulse animation for newly selected button */
+@keyframes pulse-glow {
+  0% {
+    box-shadow: var(--box-shadow);
+  }
+  50% {
+    box-shadow: var(--box-shadow-hover), 0 0 20px rgba(102, 126, 234, 0.6);
+  }
+  100% {
+    box-shadow: var(--box-shadow);
+  }
+}
+
+.model-btn.pulse-animation {
+  animation: pulse-glow 0.8s ease-in-out;
+}
+
+/* Button text transitions */
+.model-btn {
+  text-decoration: none !important;
+}
+
+.model-btn .fas {
+  transition: transform 0.3s ease;
+}
+
+.model-btn.active .fas {
+  transform: scale(1.1);
 }

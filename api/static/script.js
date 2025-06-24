@@ -80,11 +80,15 @@ class OptionPricingPlatform {
     $("#modelType").on("change", this.onModelTypeChange.bind(this));
     $("#exoticType").on("change", this.onExoticTypeChange.bind(this));
 
-    // Calculation buttons
-    $("#blackScholesBtn").on("click", () =>
-      this.calculateBasic("black_scholes")
-    );
-    $("#binomialBtn").on("click", () => this.calculateBasic("binomial"));
+    // Calculation buttons with model state management
+    $("#blackScholesBtn").on("click", () => {
+      this.setActiveModelButton("blackScholesBtn");
+      this.calculateBasic("black_scholes");
+    });
+    $("#binomialBtn").on("click", () => {
+      this.setActiveModelButton("binomialBtn");
+      this.calculateBasic("binomial");
+    });
     $("#calculateAdvanced").on("click", this.calculateAdvanced.bind(this));
     $("#calculateExotic").on("click", this.calculateExotic.bind(this));
 
@@ -134,29 +138,53 @@ class OptionPricingPlatform {
   async loadMarketDashboard() {
     try {
       const response = await fetch("/api/market_sentiment");
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
       const data = await response.json();
 
       if (data.vix && !data.vix.error) {
         $("#vixLevel").text(data.vix.vix_level.toFixed(2));
         $("#vixSentiment").text(data.vix.sentiment);
         $("#fearGreedScore").text(data.vix.fear_greed_score.toFixed(0));
+      } else {
+        // Fallback values
+        $("#vixLevel").text("--");
+        $("#vixSentiment").text("Loading...");
+        $("#fearGreedScore").text("--");
       }
 
       if (data.put_call_ratio && !data.put_call_ratio.error) {
         $("#putCallRatio").text(data.put_call_ratio.put_call_ratio.toFixed(2));
         $("#putCallSentiment").text(data.put_call_ratio.sentiment);
+      } else {
+        $("#putCallRatio").text("--");
+        $("#putCallSentiment").text("Loading...");
       }
 
-      if (data.treasury_rates) {
+      if (data.treasury_rates && data.treasury_rates["10Y"]) {
         const rate10Y = data.treasury_rates["10Y"];
-        if (rate10Y) {
+        if (!isNaN(rate10Y)) {
           $("#treasury10Y").text((rate10Y * 100).toFixed(2) + "%");
           $("#r").val(rate10Y.toFixed(4)); // Update risk-free rate
         }
+      } else {
+        $("#treasury10Y").text("--");
       }
     } catch (error) {
       console.error("Error loading market dashboard:", error);
-      this.showAlert(
+
+      // Set default values on error
+      $("#vixLevel").text("--");
+      $("#vixSentiment").text("Error loading");
+      $("#putCallRatio").text("--");
+      $("#putCallSentiment").text("Error loading");
+      $("#treasury10Y").text("--");
+      $("#fearGreedScore").text("--");
+
+      this.showNotification(
         "Warning: Unable to load real-time market data",
         "warning"
       );
@@ -1174,24 +1202,28 @@ class OptionPricingPlatform {
       const vixResponse = await fetch("/api/market_data/^VIX");
       if (vixResponse.ok) {
         const vixData = await vixResponse.json();
-        document.getElementById("vixLevel").textContent =
-          vixData.price?.toFixed(2) || "--";
+        if (vixData.price && !isNaN(vixData.price)) {
+          document.getElementById("vixLevel").textContent =
+            vixData.price.toFixed(2);
 
-        const vixSentiment =
-          vixData.price < 20
-            ? "Low Fear"
-            : vixData.price < 30
-            ? "Moderate Fear"
-            : "High Fear";
-        document.getElementById("vixSentiment").textContent = vixSentiment;
+          const vixSentiment =
+            vixData.price < 20
+              ? "Low Fear"
+              : vixData.price < 30
+              ? "Moderate Fear"
+              : "High Fear";
+          document.getElementById("vixSentiment").textContent = vixSentiment;
+        }
       }
 
       // Update Treasury data
       const treasuryResponse = await fetch("/api/market_data/^TNX");
       if (treasuryResponse.ok) {
         const treasuryData = await treasuryResponse.json();
-        document.getElementById("treasury10Y").textContent =
-          treasuryData.price?.toFixed(2) + "%" || "--";
+        if (treasuryData.price && !isNaN(treasuryData.price)) {
+          document.getElementById("treasury10Y").textContent =
+            treasuryData.price.toFixed(2) + "%";
+        }
       }
 
       this.hideLoading();
@@ -1501,6 +1533,30 @@ class OptionPricingPlatform {
       1.0 -
       ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
     return sign * y;
+  }
+
+  setActiveModelButton(activeButtonId) {
+    // Remove active class from all model buttons and add inactive
+    $(".model-btn").removeClass("active").addClass("inactive");
+
+    // Remove any existing pulse animation
+    $(".model-btn").removeClass("pulse-animation");
+
+    // Add active class to the clicked button and remove inactive
+    $(`#${activeButtonId}`).removeClass("inactive").addClass("active");
+
+    // Add pulse animation to the newly selected button
+    $(`#${activeButtonId}`).addClass("pulse-animation");
+
+    // Remove pulse animation after it completes
+    setTimeout(() => {
+      $(`#${activeButtonId}`).removeClass("pulse-animation");
+    }, 800);
+
+    // Show notification about model selection
+    const modelName =
+      activeButtonId === "blackScholesBtn" ? "Black-Scholes" : "Binomial";
+    this.showNotification(`${modelName} model selected`, "info", 2000);
   }
 }
 

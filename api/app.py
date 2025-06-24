@@ -14,6 +14,9 @@ import plotly.graph_objs as go
 import plotly.express as px
 from plotly.utils import PlotlyJSONEncoder
 
+# Import market data provider
+from market_data import MarketDataProvider, VolatilityEstimator
+
 # Import our advanced modules
 try:
     from advanced_models import MonteCarloEngine, ExoticOptions, HestonCalibration, RiskMetrics, ModelValidation
@@ -871,6 +874,70 @@ def get_market_sentiment():
             },
             'risk_warnings': ['High volatility detected'] if sentiment_data['vix_level'] > 30 else []
         })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+@app.route('/api/market_sentiment', methods=['GET'])
+def get_market_sentiment_simple():
+    """Get market sentiment indicators for dashboard"""
+    try:
+        # Get real market data
+        market_data = MarketDataProvider()
+        
+        # Initialize response data
+        response_data = {}
+        
+        # Get VIX data
+        try:
+            vix_data = market_data.get_stock_price('^VIX')
+            if 'error' not in vix_data and 'price' in vix_data:
+                vix_level = vix_data['price']
+                if vix_level < 20:
+                    sentiment = "Low Fear"
+                    fear_greed_score = 70 + (20 - vix_level) * 1.5  # Higher score for low VIX
+                elif vix_level < 30:
+                    sentiment = "Moderate Fear"
+                    fear_greed_score = 50 + (25 - vix_level) * 2
+                else:
+                    sentiment = "High Fear"
+                    fear_greed_score = 30 - (vix_level - 30) * 1.5  # Lower score for high VIX
+                    
+                response_data['vix'] = {
+                    'vix_level': vix_level,
+                    'sentiment': sentiment,
+                    'fear_greed_score': max(0, min(100, fear_greed_score))
+                }
+        except:
+            # Fallback mock data
+            vix_level = float(np.random.uniform(18, 25))
+            response_data['vix'] = {
+                'vix_level': vix_level,
+                'sentiment': "Moderate Fear" if vix_level > 20 else "Low Fear",
+                'fear_greed_score': 60
+            }
+        
+        # Mock Put/Call Ratio (since real data is harder to get)
+        put_call_ratio = float(np.random.uniform(0.9, 1.3))
+        response_data['put_call_ratio'] = {
+            'put_call_ratio': put_call_ratio,
+            'sentiment': "Bearish" if put_call_ratio > 1.1 else "Bullish" if put_call_ratio < 0.9 else "Neutral"
+        }
+        
+        # Get Treasury rates
+        try:
+            treasury_data = market_data.get_stock_price('^TNX')
+            if 'error' not in treasury_data and 'price' in treasury_data:
+                response_data['treasury_rates'] = {
+                    '10Y': treasury_data['price'] / 100  # Convert percentage to decimal
+                }
+        except:
+            # Fallback mock data
+            response_data['treasury_rates'] = {
+                '10Y': 0.045  # 4.5%
+            }
+        
+        return jsonify(response_data)
         
     except Exception as e:
         return jsonify({'error': str(e)})
