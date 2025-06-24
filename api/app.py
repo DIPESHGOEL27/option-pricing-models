@@ -627,7 +627,7 @@ def optimize_options_strategy():
             expected_return = 0.08  # 8% annual return
             max_loss = -S * 0.1  # 10% max loss
             breakeven = S * 0.95
-            profit_prob = 0.65
+            profit_prob = 0.65;
             
             result = {
                 'optimal_strike': optimal_strike,
@@ -646,7 +646,7 @@ def optimize_options_strategy():
             expected_return = 0.06
             max_loss = -S * 0.05  # Limited loss
             breakeven = S * 1.02
-            profit_prob = 0.55
+            profit_prob = 0.55;
             
             result = {
                 'optimal_strike': optimal_strike,
@@ -989,6 +989,56 @@ def analyze_performance_attribution():
         
     except Exception as e:
         return jsonify({'error': str(e)})
+
+@app.route('/api/status')
+def deployment_status():
+    """Check deployment status and feature availability"""
+    import sys
+    import platform
+    
+    status = {
+        'deployment': 'success',
+        'python_version': sys.version,
+        'platform': platform.platform(),
+        'features': {
+            'monte_carlo': MONTE_CARLO_AVAILABLE,
+            'risk_features': RISK_FEATURES_AVAILABLE,
+            'market_data': MARKET_DATA_AVAILABLE,
+            'ml_features': ML_FEATURES_AVAILABLE,
+            'validation': VALIDATION_AVAILABLE,
+            'portfolio_features': PORTFOLIO_FEATURES_AVAILABLE,
+            'advanced_pricing': ADVANCED_PRICING_AVAILABLE,
+            'overall_advanced': ADVANCED_FEATURES_AVAILABLE
+        },
+        'core_libraries': {}
+    }
+    
+    # Test core library versions
+    try:
+        import numpy as np
+        status['core_libraries']['numpy'] = np.__version__
+    except ImportError:
+        status['core_libraries']['numpy'] = 'not available'
+    
+    try:
+        import scipy
+        status['core_libraries']['scipy'] = scipy.__version__
+    except ImportError:
+        status['core_libraries']['scipy'] = 'not available'
+    
+    try:
+        import pandas as pd
+        status['core_libraries']['pandas'] = pd.__version__
+    except ImportError:
+        status['core_libraries']['pandas'] = 'not available'
+    
+    try:
+        import matplotlib
+        status['core_libraries']['matplotlib'] = matplotlib.__version__
+    except ImportError:
+        status['core_libraries']['matplotlib'] = 'not available'
+    
+    return jsonify(status)
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
