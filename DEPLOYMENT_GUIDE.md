@@ -3,6 +3,7 @@
 ## ✅ Compatibility Status
 
 **RESOLVED**: NumPy compatibility issues on Python 3.13 Windows
+
 - ✅ Updated to NumPy 2.1+ (compatible with Python 3.13)
 - ✅ Updated SciPy to 1.13+ (compatible with Python 3.13)
 - ✅ All core modules importing successfully
@@ -12,6 +13,7 @@
 ## 🚀 Deployment on Vercel
 
 ### 1. Prerequisites
+
 ```bash
 # Install Vercel CLI (if not already installed)
 npm i -g vercel
@@ -23,6 +25,7 @@ vercel login
 ### 2. Repository Setup
 
 1. **Initialize Git Repository:**
+
 ```bash
 git init
 git add .
@@ -30,6 +33,7 @@ git commit -m "Initial commit: Advanced Option Pricing Platform"
 ```
 
 2. **Push to GitHub/GitLab:**
+
 ```bash
 # Create a new repository on GitHub/GitLab
 # Add remote origin
@@ -41,6 +45,7 @@ git push -u origin main
 ### 3. Vercel Configuration
 
 The project is already configured with:
+
 - ✅ `vercel.json` - Production deployment settings
 - ✅ `requirements.txt` - Python 3.13 compatible dependencies
 - ✅ Proper Flask app structure
@@ -58,6 +63,7 @@ vercel
 ### 5. Environment Variables (if needed)
 
 Set in Vercel dashboard or via CLI:
+
 ```bash
 vercel env add SECRET_KEY
 vercel env add FLASK_ENV production
@@ -66,6 +72,7 @@ vercel env add FLASK_ENV production
 ## 🧪 Testing Commands
 
 ### Local Testing
+
 ```bash
 # Test core functionality
 python test_flask_simple.py
@@ -80,6 +87,7 @@ curl -X POST http://localhost:5000/api/calculate_black_scholes \
 ```
 
 ### Vercel Testing
+
 ```bash
 # Test deployed app
 curl -X POST https://your-app.vercel.app/api/calculate_black_scholes \
@@ -103,6 +111,7 @@ curl -X POST https://your-app.vercel.app/api/calculate_black_scholes \
 ## 🔧 Technical Details
 
 ### Resolved Issues:
+
 1. **NumPy Compatibility**: Updated from 1.26.4 to 2.3.1
 2. **SciPy Compatibility**: Updated from 1.10.x to 1.16.0
 3. **Missing Dependencies**: Added aiohttp, cvxpy
@@ -110,6 +119,7 @@ curl -X POST https://your-app.vercel.app/api/calculate_black_scholes \
 5. **Import Errors**: Fixed all module imports
 
 ### Current Status:
+
 - ✅ Python 3.13.3 compatible
 - ✅ All 25+ API endpoints working
 - ✅ Advanced features: ML pricing, portfolio optimization, risk management
