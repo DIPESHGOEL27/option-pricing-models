@@ -17,16 +17,52 @@ from plotly.utils import PlotlyJSONEncoder
 # Import our advanced modules
 try:
     from advanced_models import MonteCarloEngine, ExoticOptions, HestonCalibration, RiskMetrics, ModelValidation
+    MONTE_CARLO_AVAILABLE = True
+except ImportError:
+    MONTE_CARLO_AVAILABLE = False
+
+try:
     from advanced_risk import AdvancedRiskManager, RiskMetrics as RiskMetricsAdvanced, StressTestScenario
+    RISK_FEATURES_AVAILABLE = True
+except ImportError:
+    RISK_FEATURES_AVAILABLE = False
+
+try:
     from market_data_advanced import AdvancedMarketDataProvider, VolatilitySurfaceBuilder, MarketSentimentAnalyzer
+    MARKET_DATA_AVAILABLE = True
+except ImportError:
+    MARKET_DATA_AVAILABLE = False
+
+try:
     from ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor
+    ML_FEATURES_AVAILABLE = True
+except ImportError:
+    ML_FEATURES_AVAILABLE = False
+
+try:
     from model_validation import ModelValidator, BacktestResults
+    VALIDATION_AVAILABLE = True
+except ImportError:
+    VALIDATION_AVAILABLE = False
+
+try:
     from portfolio_optimization import AdvancedPortfolioOptimizer, OptionsStrategyOptimizer, DynamicHedgingEngine
+    PORTFOLIO_FEATURES_AVAILABLE = True
+except ImportError:
+    PORTFOLIO_FEATURES_AVAILABLE = False
+
+try:
     from option_pricing import AdvancedOptionPricer, ImpliedVolatilityCalculator
-    ADVANCED_FEATURES_AVAILABLE = True
-except ImportError as e:
-    print(f"Advanced features not available: {e}")
-    ADVANCED_FEATURES_AVAILABLE = False
+    ADVANCED_PRICING_AVAILABLE = True
+except ImportError:
+    ADVANCED_PRICING_AVAILABLE = False
+
+# Check overall advanced features availability
+ADVANCED_FEATURES_AVAILABLE = any([
+    MONTE_CARLO_AVAILABLE, RISK_FEATURES_AVAILABLE, MARKET_DATA_AVAILABLE,
+    ML_FEATURES_AVAILABLE, VALIDATION_AVAILABLE, PORTFOLIO_FEATURES_AVAILABLE,
+    ADVANCED_PRICING_AVAILABLE
+])
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
@@ -374,6 +410,12 @@ def validate_models():
 def train_neural_network_pricer():
     """Train neural network option pricing model"""
     try:
+        if not ML_FEATURES_AVAILABLE:
+            return jsonify({
+                'error': 'ML features not available in this deployment',
+                'fallback': 'Using standard Black-Scholes pricing'
+            }), 503
+            
         data = request.json
         
         # Create sample training data using the utility function
