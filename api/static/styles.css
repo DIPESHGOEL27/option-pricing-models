@@ -17,15 +17,48 @@
   --box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
   --box-shadow-hover: 0 8px 15px rgba(0, 0, 0, 0.4);
   --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  
+  /* Override Bootstrap CSS variables for dark theme */
+  --bs-body-color: #ffffff !important;
+  --bs-body-bg: #1a1a1a !important;
+  --bs-heading-color: #ffffff !important;
+  --bs-text-emphasis-dark: #ffffff !important;
+  --bs-secondary-color: #b0b0b0 !important;
+  --bs-tertiary-color: #8a8a8a !important;
+}
+
+/* Global Text Color Fix */
+* {
+  color: var(--text-primary) !important;
 }
 
 /* Global Styles */
 body {
-  background: var(--primary-bg);
-  color: var(--text-primary);
+  background: var(--primary-bg) !important;
+  color: var(--text-primary) !important;
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   line-height: 1.6;
   overflow-x: hidden;
+}
+
+/* Specific element overrides */
+h1, h2, h3, h4, h5, h6,
+.h1, .h2, .h3, .h4, .h5, .h6 {
+  color: var(--text-primary) !important;
+}
+
+p, span, div, label, small {
+  color: var(--text-primary) !important;
+}
+
+/* Card text fixes */
+.card,
+.card-body,
+.card-header,
+.card-title,
+.card-text {
+  color: var(--text-primary) !important;
+  background-color: var(--card-bg) !important;
 }
 
 /* Background Animation */
@@ -977,6 +1010,138 @@ body::before {
   border-right-color: var(--secondary-bg) !important;
   border-bottom-color: var(--secondary-bg) !important;
   border-left-color: var(--secondary-bg) !important;
+}
+
+/* Bootstrap Component Text Overrides */
+.form-control,
+.form-select,
+.form-label,
+.input-group-text {
+  color: var(--text-primary) !important;
+  background-color: var(--secondary-bg) !important;
+  border-color: var(--border-color) !important;
+}
+
+.form-control:focus,
+.form-select:focus {
+  color: var(--text-primary) !important;
+  background-color: var(--secondary-bg) !important;
+  border-color: var(--accent-blue) !important;
+  box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25) !important;
+}
+
+.btn {
+  color: var(--text-primary) !important;
+}
+
+.nav-link {
+  color: var(--text-secondary) !important;
+}
+
+.nav-link.active,
+.nav-link:hover {
+  color: var(--text-primary) !important;
+}
+
+.table {
+  color: var(--text-primary) !important;
+  background-color: var(--card-bg) !important;
+}
+
+.table td,
+.table th {
+  border-color: var(--border-color) !important;
+  color: var(--text-primary) !important;
+}
+
+.modal-content {
+  background-color: var(--card-bg) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+.modal-header,
+.modal-body,
+.modal-footer {
+  color: var(--text-primary) !important;
+}
+
+.alert {
+  color: var(--text-primary) !important;
+}
+
+.list-group-item {
+  background-color: var(--card-bg) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Additional text visibility fixes */
+.navbar,
+.navbar-brand,
+.navbar-nav .nav-link {
+  color: var(--text-primary) !important;
+}
+
+.dropdown-menu {
+  background-color: var(--card-bg) !important;
+  border-color: var(--border-color) !important;
+}
+
+.dropdown-item {
+  color: var(--text-primary) !important;
+}
+
+.dropdown-item:hover,
+.dropdown-item:focus {
+  background-color: var(--secondary-bg) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Progress bars */
+.progress {
+  background-color: var(--secondary-bg) !important;
+}
+
+.progress-bar {
+  color: var(--text-primary) !important;
+}
+
+/* Badges */
+.badge {
+  color: var(--text-primary) !important;
+}
+
+/* Tooltips */
+.tooltip-inner {
+  background-color: var(--card-bg) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Popovers */
+.popover {
+  background-color: var(--card-bg) !important;
+  border-color: var(--border-color) !important;
+}
+
+.popover-body,
+.popover-header {
+  color: var(--text-primary) !important;
+}
+
+/* Chart containers */
+.chart-container,
+.chart-wrapper {
+  color: var(--text-primary) !important;
+}
+
+/* Ensure all text inside containers is visible */
+.container,
+.container-fluid,
+.row,
+.col,
+[class*="col-"] {
+  color: inherit !important;
 }
 
 /* Responsive Design Enhancements */
