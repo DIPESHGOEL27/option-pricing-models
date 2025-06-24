@@ -15,13 +15,18 @@ import plotly.express as px
 from plotly.utils import PlotlyJSONEncoder
 
 # Import our advanced modules
-from advanced_models import MonteCarloEngine, ExoticOptions, HestonCalibration, RiskMetrics, ModelValidation
-from advanced_risk import AdvancedRiskManager, RiskMetrics as RiskMetricsAdvanced, StressTestScenario
-from market_data_advanced import AdvancedMarketDataProvider, VolatilitySurfaceBuilder, MarketSentimentAnalyzer
-from ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor
-from model_validation import ModelValidator, BacktestResults
-from portfolio_optimization import AdvancedPortfolioOptimizer, OptionsStrategyOptimizer, DynamicHedgingEngine
-from option_pricing import AdvancedOptionPricer, ImpliedVolatilityCalculator
+try:
+    from advanced_models import MonteCarloEngine, ExoticOptions, HestonCalibration, RiskMetrics, ModelValidation
+    from advanced_risk import AdvancedRiskManager, RiskMetrics as RiskMetricsAdvanced, StressTestScenario
+    from market_data_advanced import AdvancedMarketDataProvider, VolatilitySurfaceBuilder, MarketSentimentAnalyzer
+    from ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor
+    from model_validation import ModelValidator, BacktestResults
+    from portfolio_optimization import AdvancedPortfolioOptimizer, OptionsStrategyOptimizer, DynamicHedgingEngine
+    from option_pricing import AdvancedOptionPricer, ImpliedVolatilityCalculator
+    ADVANCED_FEATURES_AVAILABLE = True
+except ImportError as e:
+    print(f"Advanced features not available: {e}")
+    ADVANCED_FEATURES_AVAILABLE = False
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
