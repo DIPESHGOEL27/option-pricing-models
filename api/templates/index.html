@@ -23,7 +23,7 @@
     />
   </head>
   <body>
-    <!-- Navigation -->
+    <!-- Enhanced Navigation -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
       <div class="container-fluid">
         <a class="navbar-brand" href="#">
@@ -41,8 +41,18 @@
         <div class="collapse navbar-collapse" id="navbarNav">
           <ul class="navbar-nav ms-auto">
             <li class="nav-item">
-              <span class="navbar-text" id="marketStatus">
-                <i class="fas fa-circle text-success"></i> Market Open
+              <span class="navbar-text me-3" id="marketStatus">
+                <span class="status-indicator status-online"></span> Market Open
+              </span>
+            </li>
+            <li class="nav-item">
+              <span class="navbar-text me-3" id="portfolioValue">
+                Portfolio: <strong>$0.00</strong>
+              </span>
+            </li>
+            <li class="nav-item">
+              <span class="navbar-text" id="lastUpdate">
+                <i class="fas fa-sync-alt me-1"></i> Updated: Just now
               </span>
             </li>
           </ul>
@@ -1079,6 +1089,33 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- Enhanced Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay">
+      <div class="loading-spinner"></div>
+    </div>
+
+    <!-- Floating Action Button for Quick Actions -->
+    <button class="fab" id="quickActionFab" title="Quick Actions">
+      <i class="fas fa-plus"></i>
+    </button>
+
+    <!-- Quick Action Menu -->
+    <div class="quick-action-menu" id="quickActionMenu" style="display: none;">
+      <button class="btn btn-sm btn-success mb-2" id="quickPrice">
+        <i class="fas fa-calculator me-2"></i>Quick Price
+      </button>
+      <button class="btn btn-sm btn-info mb-2" id="quickPortfolio">
+        <i class="fas fa-briefcase me-2"></i>Add Position
+      </button>
+      <button class="btn btn-sm btn-warning" id="quickRisk">
+        <i class="fas fa-shield-alt me-2"></i>Risk Check
+      </button>
+    </div>
+
+    <!-- Enhanced Notification System -->
+    <div id="notificationContainer" style="position: fixed; top: 80px; right: 20px; z-index: 1050;">
     </div>
 
     <!-- Scripts -->

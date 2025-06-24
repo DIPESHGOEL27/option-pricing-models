@@ -13,8 +13,61 @@ class OptionPricingPlatform {
   init() {
     this.setupEventListeners();
     this.setupAdvancedEventListeners();
+    this.setupQuickActions();
     this.loadMarketDashboard();
     this.initializeDefaults();
+    this.startRealTimeUpdates();
+    
+    // Initialize enhanced features
+    this.initializeEnhancements();
+    
+    // Show welcome notification
+    setTimeout(() => {
+      this.showNotification('Advanced Option Pricing Platform loaded successfully!', 'success');
+    }, 1000);
+  }
+
+  initializeEnhancements() {
+    // Add tooltips to all elements with title attribute
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[title]'));
+    tooltipTriggerList.map(function (tooltipTriggerEl) {
+      return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+
+    // Add click animations to buttons
+    document.querySelectorAll('.btn').forEach(btn => {
+      btn.addEventListener('click', function(e) {
+        let ripple = document.createElement('span');
+        ripple.classList.add('ripple');
+        this.appendChild(ripple);
+        
+        let x = e.clientX - e.target.offsetLeft;
+        let y = e.clientY - e.target.offsetTop;
+        
+        ripple.style.left = `${x}px`;
+        ripple.style.top = `${y}px`;
+        
+        setTimeout(() => {
+          ripple.remove();
+        }, 600);
+      });
+    });
+
+    // Enhanced form validation
+    this.setupFormValidation();
+  }
+
+  setupFormValidation() {
+    // Add real-time validation to number inputs
+    document.querySelectorAll('input[type="number"]').forEach(input => {
+      input.addEventListener('input', function() {
+        if (this.value && parseFloat(this.value) <= 0) {
+          this.classList.add('is-invalid');
+        } else {
+          this.classList.remove('is-invalid');
+        }
+      });
+    });
   }
 
   setupEventListeners() {
@@ -1076,6 +1129,311 @@ class OptionPricingPlatform {
     setTimeout(() => {
       $(".alert").fadeOut();
     }, 5000);
+  }
+
+  // Enhanced UI Management
+  showLoading() {
+    document.getElementById('loadingOverlay').classList.add('active');
+  }
+
+  hideLoading() {
+    document.getElementById('loadingOverlay').classList.remove('active');
+  }
+
+  showNotification(message, type = 'info', duration = 5000) {
+    const container = document.getElementById('notificationContainer');
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${type} alert-dismissible fade show notification-item`;
+    notification.style.marginBottom = '10px';
+    notification.innerHTML = `
+      ${message}
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    container.appendChild(notification);
+    
+    // Auto remove after duration
+    setTimeout(() => {
+      if (notification.parentNode) {
+        notification.remove();
+      }
+    }, duration);
+  }
+
+  // Enhanced Real-time Market Data
+  async updateMarketDashboard() {
+    try {
+      this.showLoading();
+      
+      // Update VIX data
+      const vixResponse = await fetch('/api/market_data/^VIX');
+      if (vixResponse.ok) {
+        const vixData = await vixResponse.json();
+        document.getElementById('vixLevel').textContent = vixData.price?.toFixed(2) || '--';
+        
+        const vixSentiment = vixData.price < 20 ? 'Low Fear' : 
+                           vixData.price < 30 ? 'Moderate Fear' : 'High Fear';
+        document.getElementById('vixSentiment').textContent = vixSentiment;
+      }
+      
+      // Update Treasury data
+      const treasuryResponse = await fetch('/api/market_data/^TNX');
+      if (treasuryResponse.ok) {
+        const treasuryData = await treasuryResponse.json();
+        document.getElementById('treasury10Y').textContent = 
+          treasuryData.price?.toFixed(2) + '%' || '--';
+      }
+      
+      this.hideLoading();
+    } catch (error) {
+      console.error('Market dashboard update failed:', error);
+      this.showNotification('Failed to update market data', 'warning');
+      this.hideLoading();
+    }
+  }
+
+  // Enhanced Option Pricing with Animations
+  async calculateBasicWithAnimation(model) {
+    const formData = this.getFormData();
+    if (!this.validateFormData(formData)) return;
+
+    this.showLoading();
+    
+    try {
+      const response = await fetch(`/api/calculate_${model}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      });
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      
+      const result = await response.json();
+      this.displayResultsWithAnimation(result, model);
+      this.showNotification(`${model} calculation completed successfully`, 'success');
+      
+    } catch (error) {
+      this.showNotification(`Calculation failed: ${error.message}`, 'danger');
+    } finally {
+      this.hideLoading();
+    }
+  }
+
+  displayResultsWithAnimation(result, model) {
+    const resultsDiv = document.getElementById('basicResults');
+    
+    // Create enhanced results display
+    const resultsHTML = `
+      <div class="card glass-card">
+        <div class="card-header">
+          <h6 class="mb-0">
+            <i class="fas fa-chart-line me-2"></i>${model.replace('_', '-').toUpperCase()} Results
+          </h6>
+        </div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-md-6">
+              <div class="metric-card">
+                <div class="metric-label">Option Price</div>
+                <div class="metric-value">${result.option_price?.toFixed(4) || 'N/A'}</div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="metric-card">
+                <div class="metric-label">Delta</div>
+                <div class="metric-value performance-${result.delta > 0 ? 'positive' : 'negative'}">
+                  ${result.delta?.toFixed(4) || 'N/A'}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="row mt-3">
+            <div class="col-md-3">
+              <div class="performance-indicator">
+                <div class="performance-label">Gamma</div>
+                <div class="performance-value">${result.gamma?.toFixed(4) || 'N/A'}</div>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="performance-indicator">
+                <div class="performance-label">Vega</div>
+                <div class="performance-value">${result.vega?.toFixed(4) || 'N/A'}</div>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="performance-indicator">
+                <div class="performance-label">Theta</div>
+                <div class="performance-value performance-${result.theta < 0 ? 'negative' : 'positive'}">
+                  ${result.theta?.toFixed(4) || 'N/A'}
+                </div>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <div class="performance-indicator">
+                <div class="performance-label">Rho</div>
+                <div class="performance-value">${result.rho?.toFixed(4) || 'N/A'}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    resultsDiv.innerHTML = resultsHTML;
+    
+    // Add entrance animation
+    const cards = resultsDiv.querySelectorAll('.metric-card, .performance-indicator');
+    cards.forEach((card, index) => {
+      card.style.opacity = '0';
+      card.style.transform = 'translateY(20px)';
+      
+      setTimeout(() => {
+        card.style.transition = 'all 0.5s ease';
+        card.style.opacity = '1';
+        card.style.transform = 'translateY(0)';
+      }, index * 100);
+    });
+  }
+
+  // Enhanced Portfolio Management
+  async addPositionWithValidation() {
+    const position = {
+      symbol: document.getElementById('posSymbol').value.toUpperCase(),
+      optionType: document.getElementById('posOptionType').value,
+      strike: parseFloat(document.getElementById('posStrike').value),
+      quantity: parseInt(document.getElementById('posQuantity').value),
+      premium: parseFloat(document.getElementById('posPremium').value),
+      expiry: document.getElementById('posExpiry').value,
+      underlying: parseFloat(document.getElementById('posUnderlying').value),
+      volatility: parseFloat(document.getElementById('posVolatility').value)
+    };
+
+    // Validate position data
+    if (!this.validatePosition(position)) {
+      this.showNotification('Please fill in all required fields correctly', 'danger');
+      return;
+    }
+
+    this.showLoading();
+    
+    try {
+      // Calculate current option value
+      const pricingResponse = await fetch('/api/calculate_black_scholes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          S: position.underlying,
+          K: position.strike,
+          T: this.calculateTimeToExpiry(position.expiry),
+          r: 0.05, // Default risk-free rate
+          sigma: position.volatility,
+          optionType: position.optionType
+        })
+      });
+
+      if (pricingResponse.ok) {
+        const pricingResult = await pricingResponse.json();
+        position.currentValue = pricingResult.option_price * position.quantity * 100;
+        position.pnl = position.currentValue - (position.premium * position.quantity * 100);
+        position.delta = pricingResult.delta * position.quantity * 100;
+        position.gamma = pricingResult.gamma * position.quantity * 100;
+        position.vega = pricingResult.vega * position.quantity;
+        position.theta = pricingResult.theta * position.quantity;
+      }
+
+      this.portfolio.push(position);
+      this.updatePortfolioDisplay();
+      this.showNotification(`Position ${position.symbol} added successfully`, 'success');
+      
+      // Close modal and reset form
+      $('#addPositionModal').modal('hide');
+      document.getElementById('addPositionForm').reset();
+      
+    } catch (error) {
+      this.showNotification(`Failed to add position: ${error.message}`, 'danger');
+    } finally {
+      this.hideLoading();
+    }
+  }
+
+  validatePosition(position) {
+    return position.symbol && 
+           position.strike > 0 && 
+           position.quantity !== 0 && 
+           position.premium > 0 && 
+           position.underlying > 0 && 
+           position.volatility > 0 && 
+           position.expiry;
+  }
+
+  calculateTimeToExpiry(expiryDate) {
+    const today = new Date();
+    const expiry = new Date(expiryDate);
+    const timeDiff = expiry.getTime() - today.getTime();
+    return Math.max(0, timeDiff / (1000 * 3600 * 24 * 365)); // Years
+  }
+
+  // Enhanced Real-time Updates
+  startRealTimeUpdates() {
+    // Update market dashboard every 30 seconds
+    this.marketUpdateInterval = setInterval(() => {
+      this.updateMarketDashboard();
+    }, 30000);
+
+    // Update portfolio every 60 seconds
+    this.portfolioUpdateInterval = setInterval(() => {
+      if (this.portfolio.length > 0) {
+        this.updatePortfolioValues();
+      }
+    }, 60000);
+  }
+
+  stopRealTimeUpdates() {
+    if (this.marketUpdateInterval) {
+      clearInterval(this.marketUpdateInterval);
+    }
+    if (this.portfolioUpdateInterval) {
+      clearInterval(this.portfolioUpdateInterval);
+    }
+  }
+
+  // Enhanced Quick Actions
+  setupQuickActions() {
+    const fab = document.getElementById('quickActionFab');
+    const menu = document.getElementById('quickActionMenu');
+    
+    fab.addEventListener('click', () => {
+      const isVisible = menu.style.display !== 'none';
+      menu.style.display = isVisible ? 'none' : 'block';
+      fab.innerHTML = isVisible ? '<i class="fas fa-plus"></i>' : '<i class="fas fa-times"></i>';
+    });
+
+    // Quick price calculation
+    document.getElementById('quickPrice').addEventListener('click', () => {
+      // Auto-fill with market data and calculate
+      document.getElementById('S').value = '100';
+      document.getElementById('K').value = '100';
+      document.getElementById('T').value = '0.25';
+      document.getElementById('r').value = '0.05';
+      document.getElementById('sigma').value = '0.2';
+      this.calculateBasicWithAnimation('black_scholes');
+      menu.style.display = 'none';
+      fab.innerHTML = '<i class="fas fa-plus"></i>';
+    });
+
+    // Quick portfolio addition
+    document.getElementById('quickPortfolio').addEventListener('click', () => {
+      $('#addPositionModal').modal('show');
+      menu.style.display = 'none';
+      fab.innerHTML = '<i class="fas fa-plus"></i>';
+    });
+
+    // Quick risk check
+    document.getElementById('quickRisk').addEventListener('click', () => {
+      document.getElementById('risk-tab').click();
+      menu.style.display = 'none';
+      fab.innerHTML = '<i class="fas fa-plus"></i>';
+    });
   }
 
   // Mathematical utility functions
