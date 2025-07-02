@@ -122,7 +122,7 @@ curl -X POST https://your-app.vercel.app/api/calculate_black_scholes \
 
 - ✅ Python 3.13.3 compatible
 - ✅ All 25+ API endpoints working
-- ✅ Advanced features: ML pricing, portfolio optimization, risk management
+- ✅ Advanced features: ML pricing, risk management
 - ✅ Real-time market data integration
 - ✅ Interactive web interface
 - ✅ Production-ready configuration

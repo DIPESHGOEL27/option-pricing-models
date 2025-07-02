@@ -6,7 +6,6 @@ This package provides a comprehensive suite of tools for:
 - Option pricing using various models (Black-Scholes, Heston, etc.)
 - Advanced risk management and analytics
 - Machine learning-based pricing models
-- Portfolio optimization
 - Real-time market data integration
 - Model validation and backtesting
 """

@@ -78,7 +78,6 @@ class OptionPricingPlatform {
   setupEventListeners() {
     // Model type changes
     $("#modelType").on("change", this.onModelTypeChange.bind(this));
-    $("#exoticType").on("change", this.onExoticTypeChange.bind(this));
 
     // Calculation buttons with model state management
     $("#blackScholesBtn").on("click", () => {
@@ -90,7 +89,6 @@ class OptionPricingPlatform {
       this.calculateBasic("binomial");
     });
     $("#calculateAdvanced").on("click", this.calculateAdvanced.bind(this));
-    $("#calculateExotic").on("click", this.calculateExotic.bind(this));
 
     // Market data
     $("#getDataBtn").on("click", this.getMarketData.bind(this));
@@ -205,16 +203,6 @@ class OptionPricingPlatform {
     }
   }
 
-  onExoticTypeChange() {
-    const exoticType = $("#exoticType").val();
-
-    // Hide all exotic parameter sections
-    $(".exotic-params").hide();
-
-    // Show relevant parameters
-    $(`#${exoticType}Params`).show();
-  }
-
   async calculateBasic(model) {
     try {
       const params = this.getBasicParameters();
@@ -283,42 +271,6 @@ class OptionPricingPlatform {
     } catch (error) {
       console.error("Advanced calculation error:", error);
       this.showAlert("Error in advanced calculation.", "danger");
-    }
-  }
-
-  async calculateExotic() {
-    try {
-      const params = this.getBasicParameters();
-      const exoticType = $("#exoticType").val();
-
-      const data = {
-        ...params,
-        exoticType: exoticType,
-      };
-
-      // Add exotic-specific parameters
-      if (exoticType === "asian") {
-        data.asianType = $("#asianType").val();
-      } else if (exoticType === "barrier") {
-        data.barrier = parseFloat($("#barrier").val());
-        data.barrierType = $("#barrierType").val();
-      } else if (exoticType === "lookback") {
-        data.lookbackType = $("#lookbackType").val();
-      } else if (exoticType === "binary") {
-        data.payout = parseFloat($("#payout").val());
-      }
-
-      const response = await fetch("/api/exotic_options", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-
-      const result = await response.json();
-      this.displayExoticResults(result);
-    } catch (error) {
-      console.error("Exotic calculation error:", error);
-      this.showAlert("Error in exotic option calculation.", "danger");
     }
   }
 
@@ -692,7 +644,7 @@ class OptionPricingPlatform {
                 </div>
             `);
     } catch (error) {
-      this.showError("ML Pricing Error", error.message);
+      this.showNotification(`ML Pricing Error: ${error.message}`, "danger");
     }
   }
 
@@ -740,7 +692,10 @@ class OptionPricingPlatform {
                 <strong>Sharpe Ratio:</strong> ${result.sharpe_ratio.toFixed(3)}
             `);
     } catch (error) {
-      this.showError("Portfolio Optimization Error", error.message);
+      this.showNotification(
+        `Portfolio Optimization Error: ${error.message}`,
+        "danger"
+      );
     }
   }
 
@@ -808,7 +763,7 @@ class OptionPricingPlatform {
                 </div>
             `);
     } catch (error) {
-      this.showError("Risk Analysis Error", error.message);
+      this.showNotification(`Risk Analysis Error: ${error.message}`, "danger");
     }
   }
 
@@ -847,7 +802,10 @@ class OptionPricingPlatform {
                 </div>
             `);
     } catch (error) {
-      this.showError("Hedging Calculation Error", error.message);
+      this.showNotification(
+        `Hedging Calculation Error: ${error.message}`,
+        "danger"
+      );
     }
   }
 
@@ -885,7 +843,10 @@ class OptionPricingPlatform {
         $("#overallSentiment").addClass("text-warning");
       }
     } catch (error) {
-      this.showError("Market Sentiment Error", error.message);
+      this.showNotification(
+        `Market Sentiment Error: ${error.message}`,
+        "danger"
+      );
     }
   }
 

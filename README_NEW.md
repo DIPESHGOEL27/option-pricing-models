@@ -2,7 +2,7 @@
 
 ## 🚀 Industry-Grade Option Pricing & Risk Management Platform
 
-A comprehensive, professional-grade option pricing and risk management platform featuring advanced pricing models, machine learning capabilities, portfolio optimization, and sophisticated risk analytics.
+A comprehensive, professional-grade option pricing and risk management platform featuring advanced pricing models, machine learning capabilities, and sophisticated risk analytics.
 
 ![Platform Status](https://img.shields.io/badge/status-production_ready-brightgreen)
 ![Python](https://img.shields.io/badge/python-3.8%2B-blue)
@@ -17,7 +17,6 @@ A comprehensive, professional-grade option pricing and risk management platform 
 - **Binomial/Trinomial Trees** for American and Bermudan options
 - **Heston Stochastic Volatility Model** with calibration
 - **Jump-Diffusion Models** (Merton, Kou) for extreme events
-- **Exotic Options** (Barrier, Asian, Lookback, Binary)
 
 ### 🤖 **Machine Learning & AI**
 
@@ -27,22 +26,13 @@ A comprehensive, professional-grade option pricing and risk management platform 
 - **Real-time Model Calibration** and adaptive learning
 - **Feature Engineering** with market microstructure data
 
-### 📊 **Portfolio Optimization**
-
-- **Mean-Variance Optimization** (Markowitz)
-- **Risk Parity** and Equal Risk Contribution
-- **Black-Litterman Model** with views integration
-- **CVaR Optimization** for tail risk management
-- **Multi-Objective Optimization** with custom constraints
-- **Options Strategy Optimization** (covered calls, protective puts)
-
 ### 🛡️ **Advanced Risk Management**
 
 - **Value at Risk (VaR)** - Historical, Parametric, Monte Carlo
 - **Expected Shortfall (ES)** and Conditional VaR
 - **Stress Testing** with custom scenarios
 - **Dynamic Hedging** with real-time delta neutrality
-- **Portfolio Risk Attribution** and decomposition
+- **Risk Attribution** and decomposition
 - **Backtesting Framework** with walk-forward analysis
 
 ### 📈 **Market Data & Analytics**
@@ -71,10 +61,7 @@ api/
 ├── option_pricing.py         # Enhanced Black-Scholes with advanced Greeks
 ├── advanced_models.py        # Monte Carlo, Heston, Jump-diffusion models
 ├── ml_pricing.py            # Neural networks and ensemble ML models
-├── portfolio_optimization.py # Modern portfolio theory implementations
 ├── advanced_risk.py         # Comprehensive risk management suite
-├── market_data_advanced.py  # Multi-provider market data integration
-└── model_validation.py      # Backtesting and validation framework
 ```
 
 ### Frontend (Modern Web)
@@ -126,7 +113,6 @@ python api/app.py
 ```http
 POST /api/calculate_black_scholes    # Classic Black-Scholes pricing
 POST /api/monte_carlo               # Monte Carlo simulation pricing
-POST /api/exotic_options            # Exotic options pricing
 ```
 
 ### Machine Learning APIs
@@ -135,13 +121,6 @@ POST /api/exotic_options            # Exotic options pricing
 POST /api/ml/train_neural_network   # Train neural network models
 POST /api/ml/ensemble_price         # Ensemble ML pricing
 POST /api/ml/volatility_forecast    # ML volatility prediction
-```
-
-### Portfolio Optimization APIs
-
-```http
-POST /api/portfolio/optimize        # Portfolio optimization
-POST /api/options/strategy_optimize # Options strategy optimization
 ```
 
 ### Risk Management APIs

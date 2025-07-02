@@ -50,13 +50,11 @@ e:\Option_Pricing_Models/
     ├── # Advanced Features
     ├── ml_pricing.py               # Machine learning pricing models
     ├── advanced_risk.py            # Advanced risk management
-    ├── portfolio_optimization.py   # Portfolio optimization algorithms
     ├── model_validation.py         # Model validation and backtesting
     ├──
     ├── # Market Data
     ├── market_data.py              # Basic market data functionality
     ├── market_data_advanced.py     # Advanced market data and sentiment
-    ├── portfolio_management.py     # Portfolio management utilities
     ├──
     ├── # Frontend
     ├── templates/

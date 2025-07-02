@@ -5,7 +5,6 @@ Industry-grade implementation of sophisticated option pricing models including:
 - Monte Carlo simulation with various processes
 - Heston stochastic volatility model
 - Jump-diffusion models (Merton, Kou)
-- Exotic options pricing
 - Calibration and validation tools
 """
 
@@ -13,7 +12,6 @@ import numpy as np
 import pandas as pd
 from scipy import stats, optimize
 from scipy.special import gamma as gamma_func
-import matplotlib.pyplot as plt
 from typing import Dict, List, Tuple, Optional, Union
 import warnings
 warnings.filterwarnings('ignore')
@@ -30,14 +28,22 @@ class MonteCarloEngine:
             np.random.seed(random_seed)
     
     def geometric_brownian_motion(self, S0: float, T: float, r: float, 
-                                sigma: float) -> np.ndarray:
-        """Generate paths using Geometric Brownian Motion"""
+                                sigma: float, use_antithetic: bool = True) -> np.ndarray:
+        """Generate paths using Geometric Brownian Motion with antithetic variates"""
         dt = T / self.n_steps
         drift = (r - 0.5 * sigma**2) * dt
         diffusion = sigma * np.sqrt(dt)
         
-        Z = np.random.standard_normal((self.n_simulations, self.n_steps))
-        log_returns = drift + diffusion * Z
+        if use_antithetic:
+            # Use antithetic variates for variance reduction
+            half_sims = self.n_simulations // 2
+            Z = np.random.standard_normal((half_sims, self.n_steps))
+            Z_antithetic = -Z  # Antithetic variates
+            Z_combined = np.vstack([Z, Z_antithetic])
+        else:
+            Z_combined = np.random.standard_normal((self.n_simulations, self.n_steps))
+        
+        log_returns = drift + diffusion * Z_combined
         log_returns = np.column_stack([np.zeros(self.n_simulations), log_returns])
         
         log_prices = np.cumsum(log_returns, axis=1)

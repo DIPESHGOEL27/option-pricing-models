@@ -2,7 +2,7 @@
 
 ## 🎨 **Modern Dark Theme Interface**
 
-A sophisticated, production-ready web application for advanced option pricing, risk management, and portfolio optimization with a beautiful dark theme UI.
+A sophisticated, production-ready web application for advanced option pricing and risk management with a beautiful dark theme UI.
 
 ### ✨ **Key Features**
 
@@ -11,13 +11,11 @@ A sophisticated, production-ready web application for advanced option pricing, r
 - **Black-Scholes Pricing** - Industry-standard option valuation
 - **Monte Carlo Simulations** - Advanced stochastic modeling
 - **Binomial Trees** - Discrete-time pricing models
-- **Exotic Options** - Barrier, Asian, and custom derivatives
 
 #### 📊 **Advanced Analytics**
 
 - **Real-time Market Data** - Live stock prices and volatility
 - **Risk Metrics** - Greeks, VaR, stress testing
-- **Portfolio Optimization** - Modern portfolio theory implementation
 - **Volatility Surface** - 3D volatility visualization
 
 #### 🤖 **Machine Learning**
@@ -26,13 +24,6 @@ A sophisticated, production-ready web application for advanced option pricing, r
 - **Ensemble Models** - Multiple ML algorithms combined
 - **Volatility Forecasting** - Predictive analytics
 - **Model Validation** - Backtesting and performance metrics
-
-#### 💼 **Portfolio Management**
-
-- **Dynamic Hedging** - Real-time risk management
-- **Strategy Optimization** - Options strategy analyzer
-- **Performance Analytics** - Comprehensive reporting
-- **Risk Assessment** - Advanced risk calculations
 
 ## 🎨 **UI/UX Features**
 
@@ -103,7 +94,6 @@ A sophisticated, production-ready web application for advanced option pricing, r
 - `POST /api/calculate_black_scholes` - Option pricing
 - `POST /api/monte_carlo` - Monte Carlo simulations
 - `POST /api/risk_metrics` - Risk calculations
-- `POST /api/portfolio/optimize` - Portfolio optimization
 
 ## 🎯 **Usage Guide**
 
@@ -123,15 +113,7 @@ A sophisticated, production-ready web application for advanced option pricing, r
 4. Generate risk reports and VaR calculations
 5. Perform stress testing scenarios
 
-### **3. Portfolio Optimization**
-
-1. Access **Portfolio** section
-2. Input expected returns and constraints
-3. Select optimization criteria
-4. View efficient frontier
-5. Export optimized allocations
-
-### **4. Market Data**
+### **3. Market Data**
 
 1. Enter stock symbol in **Market Data**
 2. View real-time prices and volatility
