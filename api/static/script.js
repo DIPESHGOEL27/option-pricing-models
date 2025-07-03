@@ -768,8 +768,18 @@ class OptionPricingPlatform {
   }
 
   async calculateHedging() {
+    // Get portfolio delta and validate it
+    const portfolioDeltaValue = $("#portfolioDelta").val();
+    if (!portfolioDeltaValue || isNaN(parseFloat(portfolioDeltaValue))) {
+      this.showNotification(
+        "Please enter a valid portfolio delta value",
+        "warning"
+      );
+      return;
+    }
+
     const data = {
-      portfolio_delta: parseFloat($("#portfolioDelta").val()),
+      portfolio_delta: parseFloat(portfolioDeltaValue),
       target_delta: 0,
       hedge_ratio: 1.0,
     };

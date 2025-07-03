@@ -3,6 +3,7 @@ import numpy as np
 import scipy.stats as si
 from scipy import stats
 import pandas as pd
+import math
 from datetime import datetime, timedelta
 import json
 import io
@@ -53,18 +54,26 @@ except ImportError:
         MARKET_DATA_AVAILABLE = False
 
 try:
+    # Try the direct import first
     from .ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
     ML_FEATURES_AVAILABLE = True
 except ImportError:
     try:
-        from api.ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
+        # Try through the fix module
+        from .ml_pricing_fix import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
         ML_FEATURES_AVAILABLE = True
     except ImportError:
         try:
-            from ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
+            # Try with the api prefix
+            from api.ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
             ML_FEATURES_AVAILABLE = True
         except ImportError:
-            ML_FEATURES_AVAILABLE = False
+            try:
+                # Try without any prefix
+                from ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
+                ML_FEATURES_AVAILABLE = True
+            except ImportError:
+                ML_FEATURES_AVAILABLE = False
 
 try:
     from model_validation import ModelValidator, BacktestResults
@@ -83,6 +92,14 @@ ADVANCED_FEATURES_AVAILABLE = any([
     MONTE_CARLO_AVAILABLE, RISK_FEATURES_AVAILABLE, MARKET_DATA_AVAILABLE,
     ML_FEATURES_AVAILABLE, VALIDATION_AVAILABLE, ADVANCED_PRICING_AVAILABLE
 ])
+
+# Ensure Python can find the modules in the current directory
+import sys
+import os
+# Add the current directory to the Python path if not already there
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
@@ -112,16 +129,24 @@ def black_scholes(S, K, T, r, sigma, option_type='call'):
 @app.route('/api/calculate_black_scholes', methods=['POST'])
 def calculate_black_scholes():
     data = request.json
-    if not data:
-        return jsonify({'error': 'No JSON data provided'}), 400
+    
+    # Validate required numeric inputs
+    required_fields = ['S', 'K', 'T', 'r', 'sigma']
+    validated_data, error = validate_numeric_inputs(data, required_fields)
+    if error:
+        return jsonify(error), 400
+        
+    # Extract validated values
+    S = validated_data['S']
+    K = validated_data['K']
+    T = validated_data['T']
+    r = validated_data['r']
+    sigma = validated_data['sigma']
+    
+    # Get option type with fallbacks
+    option_type = data.get('option_type', data.get('optionType', 'call'))
     
     try:
-        S = float(data['S'])
-        K = float(data['K'])
-        T = float(data['T'])
-        r = float(data['r'])
-        sigma = float(data['sigma'])
-        option_type = data.get('option_type', data.get('optionType', 'call'))
         price, delta, gamma, theta, vega, rho = black_scholes(S, K, T, r, sigma, option_type)
         return jsonify({
             'option_price': price,
@@ -584,13 +609,17 @@ def calculate_ensemble_price():
         sigma = float(data['sigma'])
         option_type = data['optionType']
         
-        ensemble_pricer = EnsembleOptionPricer()
-        
-        # Create a sample dataset for training
-        sample_data = create_sample_data(1000)
-        
-        # Train the ensemble model
-        ensemble_pricer.train(sample_data)
+        try:
+            ensemble_pricer = EnsembleOptionPricer()
+            
+            # Create a sample dataset for training
+            sample_data = create_sample_data(1000)
+            
+            # Train the ensemble model
+            ensemble_pricer.train(sample_data)
+        except Exception as e:
+            return jsonify({'error': f"ML Pricing Error: {str(e)}"})
+            
         
         # Create prediction data
         prediction_data = pd.DataFrame({
@@ -742,12 +771,24 @@ def calculate_dynamic_hedging():
     """Calculate dynamic hedging strategy"""
     try:
         data = request.json
-        if not data:
-            return jsonify({'error': 'No data provided'})
+        
+        # Validate required fields
+        validated_data, error = validate_numeric_inputs(data, ['portfolio_delta'])
+        if error:
+            return jsonify(error), 400
             
-        portfolio_delta = float(data['portfolio_delta'])
-        target_delta = float(data.get('target_delta', 0)) if data else 0
-        hedge_ratio = float(data.get('hedge_ratio', 1.0)) if data else 1.0
+        portfolio_delta = validated_data['portfolio_delta']
+        
+        # Parse optional parameters with defaults
+        try:
+            target_delta = float(data.get('target_delta', 0))
+        except (ValueError, TypeError):
+            target_delta = 0
+            
+        try:
+            hedge_ratio = float(data.get('hedge_ratio', 1.0))
+        except (ValueError, TypeError):
+            hedge_ratio = 1.0
         
         # Simple hedging calculations
         delta_exposure = portfolio_delta - target_delta
@@ -1327,8 +1368,13 @@ def ml_model_benchmark():
         nn_metrics = nn_pricer.train(training_data)
         
         # Train Ensemble Model
-        ensemble_pricer = EnsembleOptionPricer(['neural_network', 'gradient_boosting', 'random_forest'])
-        ensemble_metrics = ensemble_pricer.train(training_data)
+        try:
+            ensemble_pricer = EnsembleOptionPricer(['neural_network', 'gradient_boosting', 'random_forest'])
+            ensemble_metrics = ensemble_pricer.train(training_data)
+        except Exception as e:
+            print(f"Error initializing ensemble pricer: {str(e)}")
+            # Provide default metrics if ensemble fails
+            ensemble_metrics = {'neural_network': {'val_r2': 0}, 'gradient_boosting': {'val_r2': 0}, 'random_forest': {'val_r2': 0}}
         
         # Calculate performance metrics
         best_r2 = max(nn_metrics.get('val_r2', 0), 
@@ -1353,3 +1399,28 @@ def ml_model_benchmark():
         
     except Exception as e:
         return jsonify({'error': f'ML benchmark error: {str(e)}'})
+
+# =================== UTILITY FUNCTIONS ===================
+
+def validate_numeric_inputs(data, required_fields):
+    """Validate that required numeric fields exist and contain valid numbers"""
+    if not data:
+        return {'error': 'No data provided'}, 400
+        
+    # Check for required fields
+    missing_fields = [field for field in required_fields if field not in data or data[field] is None]
+    if missing_fields:
+        return {'error': f'Missing required fields: {", ".join(missing_fields)}'}, 400
+        
+    # Convert and validate numeric fields
+    validated_values = {}
+    try:
+        for field in required_fields:
+            value = float(data[field])
+            if math.isnan(value):
+                return {'error': f'Invalid numeric value for {field}'}, 400
+            validated_values[field] = value
+    except (ValueError, TypeError) as e:
+        return {'error': f'Invalid numeric input for {field}: {str(e)}'}, 400
+        
+    return validated_values, None
