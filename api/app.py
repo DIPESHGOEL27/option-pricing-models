@@ -53,26 +53,32 @@ except ImportError:
     except ImportError:
         MARKET_DATA_AVAILABLE = False
 
+# Try to import ML modules, prioritize the fix module
 try:
-    # Try the direct import first
-    from .ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
+    # Try the fix module first (this has direct implementations that don't rely on imports)
+    from .ml_pricing_fix import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
+    print("Successfully imported ML modules from ml_pricing_fix")
     ML_FEATURES_AVAILABLE = True
 except ImportError:
     try:
-        # Try through the fix module
-        from .ml_pricing_fix import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
+        # Then try the direct import
+        from .ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
+        print("Successfully imported ML modules from .ml_pricing")
         ML_FEATURES_AVAILABLE = True
     except ImportError:
         try:
             # Try with the api prefix
             from api.ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
+            print("Successfully imported ML modules from api.ml_pricing")
             ML_FEATURES_AVAILABLE = True
         except ImportError:
             try:
                 # Try without any prefix
                 from ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
+                print("Successfully imported ML modules from ml_pricing")
                 ML_FEATURES_AVAILABLE = True
             except ImportError:
+                print("Failed to import ML modules from any location")
                 ML_FEATURES_AVAILABLE = False
 
 try:
@@ -1349,7 +1355,13 @@ def get_performance_metrics():
 def ml_model_benchmark():
     """Benchmark ML models with 50,000+ records achieving R² = 0.94"""
     try:
-        from ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, create_sample_data
+        # Try using the fix module first
+        try:
+            from ml_pricing_fix import NeuralNetworkPricer, EnsembleOptionPricer, create_sample_data
+            print("Using ml_pricing_fix in benchmark function")
+        except ImportError:
+            from ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, create_sample_data
+            print("Using ml_pricing in benchmark function")
         
         # Generate large training dataset
         print("Generating 50,000+ training records...")
