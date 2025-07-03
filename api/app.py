@@ -53,14 +53,18 @@ except ImportError:
         MARKET_DATA_AVAILABLE = False
 
 try:
-    from .ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor
+    from .ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
     ML_FEATURES_AVAILABLE = True
 except ImportError:
     try:
-        from ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor
+        from api.ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
         ML_FEATURES_AVAILABLE = True
     except ImportError:
-        ML_FEATURES_AVAILABLE = False
+        try:
+            from ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
+            ML_FEATURES_AVAILABLE = True
+        except ImportError:
+            ML_FEATURES_AVAILABLE = False
 
 try:
     from model_validation import ModelValidator, BacktestResults
@@ -583,7 +587,6 @@ def calculate_ensemble_price():
         ensemble_pricer = EnsembleOptionPricer()
         
         # Create a sample dataset for training
-        from ml_pricing import create_sample_data
         sample_data = create_sample_data(1000)
         
         # Train the ensemble model
