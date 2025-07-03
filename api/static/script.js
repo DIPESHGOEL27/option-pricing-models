@@ -1056,13 +1056,19 @@ class OptionPricingPlatform {
 
   displayValidationResults(result) {
     const validation = result.validation;
+
+    // Handle validation status - check for validation_passed or is_within_confidence
+    const validationPassed =
+      validation.validation_passed === 1 ||
+      validation.is_within_confidence === true;
+
     let html = `
             <div class="alert alert-${
-              validation.is_within_confidence ? "success" : "warning"
+              validationPassed ? "success" : "warning"
             }">
                 <h6><i class="fas fa-check-circle me-2"></i>Model Validation</h6>
                 <small>Validation: ${
-                  validation.is_within_confidence ? "PASSED" : "REVIEW NEEDED"
+                  validationPassed ? "PASSED" : "REVIEW NEEDED"
                 }</small>
             </div>
             <table class="table table-dark table-striped table-sm">
@@ -1072,9 +1078,9 @@ class OptionPricingPlatform {
                 <tr><td>Monte Carlo Price</td><td>$${validation.monte_carlo_price?.toFixed(
                   4
                 )}</td></tr>
-                <tr><td>Absolute Error</td><td>$${validation.absolute_error?.toFixed(
-                  6
-                )}</td></tr>
+                <tr><td>Absolute Error</td><td>$${(
+                  validation.price_difference || validation.absolute_error
+                )?.toFixed(6)}</td></tr>
                 <tr><td>Relative Error</td><td>${(
                   validation.relative_error * 100
                 )?.toFixed(4)}%</td></tr>

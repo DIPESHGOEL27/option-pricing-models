@@ -316,11 +316,13 @@ class EnsembleOptionPricer:
         self.scalers = {}
         self.weights = {}
         self.is_trained = False
+        self.feature_preparer = None  # Will use neural network's feature preparation for consistency
         
         # Initialize models
         for model_name in models:
             if model_name == 'neural_network':
                 self.models[model_name] = NeuralNetworkPricer()
+                self.feature_preparer = self.models[model_name]  # Use NN for feature preparation
             elif model_name == 'random_forest':
                 self.models[model_name] = RandomForestRegressor(
                     n_estimators=100, max_depth=10, random_state=42
@@ -331,6 +333,10 @@ class EnsembleOptionPricer:
                     n_estimators=100, max_depth=6, learning_rate=0.1, random_state=42
                 )
                 self.scalers[model_name] = StandardScaler()
+        
+        # If no neural network, create a feature preparer
+        if self.feature_preparer is None:
+            self.feature_preparer = NeuralNetworkPricer()
     
     def train(self, training_data: pd.DataFrame, target_column: str = 'option_price',
               validation_split: float = 0.2) -> Dict[str, Dict[str, float]]:
@@ -346,36 +352,54 @@ class EnsembleOptionPricer:
             Training metrics for each model
         """
         metrics = {}
-        
-        # Split data once for all models
-        if 'neural_network' in self.models:
-            # Use neural network feature preparation
-            X = self.models['neural_network'].prepare_features(training_data)
-        else:
-            # Basic feature preparation for tree-based models
-            basic_features = ['S', 'K', 'T', 'r', 'sigma']
-            X = training_data[basic_features].values
-        
         y = training_data[target_column].values
         
-        X_train, X_val, y_train, y_val = train_test_split(
-            X, y, test_size=validation_split, random_state=42
-        )
-        
-        # Train each model
+        # Train each model with appropriate feature sets
         for model_name, model in self.models.items():
             try:
                 if model_name == 'neural_network':
-                    # Neural network has its own training method
+                    # Neural network has its own training method with enhanced features
                     model_metrics = model.train(training_data, target_column, validation_split)
                     metrics[model_name] = model_metrics
                     
-                    # Get validation predictions for weight calculation
-                    val_data = training_data.iloc[X_val.shape[0]:]  # Approximate
-                    val_pred = model.predict(val_data)
-                    
                 else:
-                    # Sklearn models
+                    # Tree-based models use basic features only
+                    basic_features = ['S', 'K', 'T', 'r', 'sigma']
+                    if not all(feature in training_data.columns for feature in basic_features):
+                        # Map alternative column names if needed
+                        feature_mapping = {
+                            'S': ['spot_price', 'stock_price', 'underlying_price'],
+                            'K': ['strike_price', 'strike'],
+                            'T': ['time_to_expiry', 'time_to_maturity', 'tte'],
+                            'r': ['risk_free_rate', 'interest_rate'],
+                            'sigma': ['volatility', 'implied_vol', 'vol']
+                        }
+                        
+                        mapped_features = []
+                        for feature in basic_features:
+                            found = False
+                            if feature in training_data.columns:
+                                mapped_features.append(feature)
+                                found = True
+                            else:
+                                for alt_name in feature_mapping.get(feature, []):
+                                    if alt_name in training_data.columns:
+                                        mapped_features.append(alt_name)
+                                        found = True
+                                        break
+                            if not found:
+                                raise ValueError(f"Required feature '{feature}' not found in data")
+                        
+                        X = training_data[mapped_features].values
+                    else:
+                        X = training_data[basic_features].values
+                    
+                    # Split data for this model
+                    X_train, X_val, y_train, y_val = train_test_split(
+                        X, y, test_size=validation_split, random_state=42
+                    )
+                    
+                    # Scale features for this specific model
                     scaler = self.scalers[model_name]
                     X_train_scaled = scaler.fit_transform(X_train)
                     X_val_scaled = scaler.transform(X_val)
@@ -432,15 +456,43 @@ class EnsembleOptionPricer:
         for model_name, model in self.models.items():
             try:
                 if model_name == 'neural_network':
+                    # Neural network uses its own feature preparation
                     pred = model.predict(market_data)
                 else:
-                    # Sklearn models
-                    if model_name == 'neural_network':
-                        X = model.prepare_features(market_data)
+                    # Tree-based models use basic features only (same as training)
+                    basic_features = ['S', 'K', 'T', 'r', 'sigma']
+                    
+                    # Check if basic features exist, otherwise try to map them
+                    if not all(feature in market_data.columns for feature in basic_features):
+                        # Map alternative column names
+                        feature_mapping = {
+                            'S': ['spot_price', 'stock_price', 'underlying_price'],
+                            'K': ['strike_price', 'strike'],
+                            'T': ['time_to_expiry', 'time_to_maturity', 'tte'],
+                            'r': ['risk_free_rate', 'interest_rate'],
+                            'sigma': ['volatility', 'implied_vol', 'vol']
+                        }
+                        
+                        mapped_features = []
+                        for feature in basic_features:
+                            found = False
+                            if feature in market_data.columns:
+                                mapped_features.append(feature)
+                                found = True
+                            else:
+                                for alt_name in feature_mapping.get(feature, []):
+                                    if alt_name in market_data.columns:
+                                        mapped_features.append(alt_name)
+                                        found = True
+                                        break
+                            if not found:
+                                raise ValueError(f"Required feature '{feature}' not found in prediction data")
+                        
+                        X = market_data[mapped_features].values
                     else:
-                        basic_features = ['S', 'K', 'T', 'r', 'sigma']
                         X = market_data[basic_features].values
                     
+                    # Scale features using the model-specific scaler
                     scaler = self.scalers[model_name]
                     X_scaled = scaler.transform(X)
                     pred = model.predict(X_scaled)
