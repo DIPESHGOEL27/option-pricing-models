@@ -1432,43 +1432,80 @@ class OptionPricingPlatform {
 
   // Enhanced Quick Actions
   setupQuickActions() {
-    const fab = document.getElementById("quickActionFab");
-    const menu = document.getElementById("quickActionMenu");
+    // Wait until DOM is fully loaded
+    setTimeout(() => {
+      const fab = document.getElementById("quickActionFab");
+      const menu = document.getElementById("quickActionMenu");
 
-    fab.addEventListener("click", () => {
-      const isVisible = menu.style.display !== "none";
-      menu.style.display = isVisible ? "none" : "block";
-      fab.innerHTML = isVisible
-        ? '<i class="fas fa-plus"></i>'
-        : '<i class="fas fa-times"></i>';
-    });
+      // Only setup if elements exist
+      if (fab && menu) {
+        fab.addEventListener("click", () => {
+          const isVisible = menu.style.display !== "none";
+          menu.style.display = isVisible ? "none" : "block";
+          fab.innerHTML = isVisible
+            ? '<i class="fas fa-plus"></i>'
+            : '<i class="fas fa-times"></i>';
+        });
+      } else {
+        console.log("Quick action elements not found in the DOM");
+        return; // Exit early if core elements don't exist
+      }
 
-    // Quick price calculation
-    document.getElementById("quickPrice").addEventListener("click", () => {
-      // Auto-fill with market data and calculate
-      document.getElementById("S").value = "100";
-      document.getElementById("K").value = "100";
-      document.getElementById("T").value = "0.25";
-      document.getElementById("r").value = "0.05";
-      document.getElementById("sigma").value = "0.2";
-      this.calculateBasicWithAnimation("black_scholes");
-      menu.style.display = "none";
-      fab.innerHTML = '<i class="fas fa-plus"></i>';
-    });
+      // Quick price calculation
+      const quickPriceBtn = document.getElementById("quickPrice");
+      if (quickPriceBtn) {
+        quickPriceBtn.addEventListener("click", () => {
+          // Auto-fill with market data and calculate
+          const sInput = document.getElementById("S");
+          const kInput = document.getElementById("K");
+          const tInput = document.getElementById("T");
+          const rInput = document.getElementById("r");
+          const sigmaInput = document.getElementById("sigma");
 
-    // Quick portfolio addition
-    document.getElementById("quickPortfolio").addEventListener("click", () => {
-      $("#addPositionModal").modal("show");
-      menu.style.display = "none";
-      fab.innerHTML = '<i class="fas fa-plus"></i>';
-    });
+          if (sInput) sInput.value = "100";
+          if (kInput) kInput.value = "100";
+          if (tInput) tInput.value = "0.25";
+          if (rInput) rInput.value = "0.05";
+          if (sigmaInput) sigmaInput.value = "0.2";
 
-    // Quick risk check
-    document.getElementById("quickRisk").addEventListener("click", () => {
-      document.getElementById("risk-tab").click();
-      menu.style.display = "none";
-      fab.innerHTML = '<i class="fas fa-plus"></i>';
-    });
+          this.calculateBasicWithAnimation("black_scholes");
+
+          menu.style.display = "none";
+          fab.innerHTML = '<i class="fas fa-plus"></i>';
+        });
+      } else {
+        console.log("Quick price button not found in the DOM");
+      }
+
+      // Quick portfolio addition
+      const quickPortfolioBtn = document.getElementById("quickPortfolio");
+      if (quickPortfolioBtn) {
+        quickPortfolioBtn.addEventListener("click", () => {
+          $("#addPositionModal").modal("show");
+          menu.style.display = "none";
+          fab.innerHTML = '<i class="fas fa-plus"></i>';
+        });
+      } else {
+        console.log(
+          "Quick portfolio button not found in the DOM - this is expected based on HTML"
+        );
+      }
+
+      // Quick risk check
+      const quickRiskBtn = document.getElementById("quickRisk");
+      if (quickRiskBtn) {
+        quickRiskBtn.addEventListener("click", () => {
+          const riskTab = document.getElementById("risk-tab");
+          if (riskTab) {
+            riskTab.click();
+          }
+          menu.style.display = "none";
+          fab.innerHTML = '<i class="fas fa-plus"></i>';
+        });
+      } else {
+        console.log("Quick risk button not found in the DOM");
+      }
+    }, 500); // Add a 500ms delay to ensure DOM is fully loaded
   }
 
   // Mathematical utility functions
@@ -1524,12 +1561,19 @@ class OptionPricingPlatform {
 // Initialize the platform when the page loads
 let platform;
 $(document).ready(function () {
-  platform = new OptionPricingPlatform();
+  // Make sure all elements are rendered before initializing
+  setTimeout(() => {
+    console.log("Initializing Option Pricing Platform from document.ready");
 
-  // Set up periodic market data refresh
-  setInterval(() => {
-    platform.loadMarketDashboard();
-  }, 300000); // Refresh every 5 minutes
+    // Store the instance globally for access from other scripts
+    window.optionPricingPlatform = new OptionPricingPlatform();
+    platform = window.optionPricingPlatform;
+
+    // Set up periodic market data refresh
+    setInterval(() => {
+      platform.loadMarketDashboard();
+    }, 300000); // Refresh every 5 minutes
+  }, 300); // Small delay to ensure DOM is fully rendered
 });
 
 // Global functions for HTML onclick events
