@@ -591,6 +591,159 @@
                   </div>
                 </div>
               </div>
+
+              <div class="row">
+                <!-- Advanced Monte Carlo Models -->
+                <div class="col-md-12 mb-4">
+                  <div class="card bg-dark">
+                    <div class="card-header">
+                      <h5 class="mb-0">
+                        <i class="fas fa-wave-square me-2"></i>Advanced Monte
+                        Carlo Models
+                      </h5>
+                    </div>
+                    <div class="card-body">
+                      <p class="text-muted small">
+                        Uses Spot/Strike/Time/Rate/Volatility/Option Type
+                        from the Basic Models tab. Pick a stochastic model
+                        below.
+                      </p>
+                      <div class="row">
+                        <div class="col-md-4 mb-3">
+                          <label class="form-label" for="modelType">Model</label>
+                          <select class="form-select" id="modelType">
+                            <option value="gbm">
+                              Geometric Brownian Motion
+                            </option>
+                            <option value="heston">
+                              Heston (Stochastic Volatility)
+                            </option>
+                            <option value="jump_diffusion">
+                              Merton Jump-Diffusion
+                            </option>
+                          </select>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                          <label class="form-label" for="simulations"
+                            >Simulations</label
+                          >
+                          <input
+                            type="number"
+                            class="form-control"
+                            id="simulations"
+                            value="100000"
+                            step="10000"
+                            min="1000"
+                          />
+                        </div>
+                        <div class="col-md-4 mb-3 d-flex align-items-end">
+                          <button
+                            type="button"
+                            class="btn btn-gradient-primary w-100"
+                            id="calculateAdvanced"
+                          >
+                            <i class="fas fa-play me-2"></i>Run Simulation
+                          </button>
+                        </div>
+                      </div>
+
+                      <div id="hestonParams" class="row" style="display: none">
+                        <div class="col-md-3 mb-3">
+                          <label class="form-label" for="kappa"
+                            >Mean Reversion (κ)</label
+                          >
+                          <input
+                            type="number"
+                            class="form-control"
+                            id="kappa"
+                            value="2.0"
+                            step="0.1"
+                          />
+                        </div>
+                        <div class="col-md-3 mb-3">
+                          <label class="form-label" for="theta"
+                            >Long-run Variance (θ)</label
+                          >
+                          <input
+                            type="number"
+                            class="form-control"
+                            id="theta"
+                            value="0.04"
+                            step="0.01"
+                          />
+                        </div>
+                        <div class="col-md-3 mb-3">
+                          <label class="form-label" for="sigma_v"
+                            >Vol of Vol (σᵥ)</label
+                          >
+                          <input
+                            type="number"
+                            class="form-control"
+                            id="sigma_v"
+                            value="0.3"
+                            step="0.01"
+                          />
+                        </div>
+                        <div class="col-md-3 mb-3">
+                          <label class="form-label" for="rho"
+                            >Correlation (ρ)</label
+                          >
+                          <input
+                            type="number"
+                            class="form-control"
+                            id="rho"
+                            value="-0.5"
+                            step="0.05"
+                            min="-1"
+                            max="1"
+                          />
+                        </div>
+                      </div>
+
+                      <div id="jumpParams" class="row" style="display: none">
+                        <div class="col-md-4 mb-3">
+                          <label class="form-label" for="lambda"
+                            >Jump Intensity (λ)</label
+                          >
+                          <input
+                            type="number"
+                            class="form-control"
+                            id="lambda"
+                            value="0.1"
+                            step="0.01"
+                          />
+                        </div>
+                        <div class="col-md-4 mb-3">
+                          <label class="form-label" for="mu_j"
+                            >Mean Jump Size (μⱼ)</label
+                          >
+                          <input
+                            type="number"
+                            class="form-control"
+                            id="mu_j"
+                            value="-0.1"
+                            step="0.01"
+                          />
+                        </div>
+                        <div class="col-md-4 mb-3">
+                          <label class="form-label" for="sigma_j"
+                            >Jump Volatility (σⱼ)</label
+                          >
+                          <input
+                            type="number"
+                            class="form-control"
+                            id="sigma_j"
+                            value="0.2"
+                            step="0.01"
+                          />
+                        </div>
+                      </div>
+
+                      <div id="advancedResults" class="mt-3"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <!-- Risk Management Panel -->

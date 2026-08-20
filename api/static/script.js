@@ -86,6 +86,10 @@ class OptionPricingPlatform {
       this.calculateBasic("binomial");
     });
 
+    // Advanced Monte Carlo models
+    $("#modelType").on("change", this.onModelTypeChange.bind(this));
+    $("#calculateAdvanced").on("click", this.calculateAdvanced.bind(this));
+
     // Market data
     $("#getDataBtn").on("click", this.getMarketData.bind(this));
     $("#symbolInput").on("keypress", (e) => {
@@ -186,6 +190,100 @@ class OptionPricingPlatform {
         "warning"
       );
     }
+  }
+
+  onModelTypeChange() {
+    const modelType = $("#modelType").val();
+    $("#hestonParams, #jumpParams").hide();
+    if (modelType === "heston") {
+      $("#hestonParams").show();
+    } else if (modelType === "jump_diffusion") {
+      $("#jumpParams").show();
+    }
+  }
+
+  async calculateAdvanced() {
+    try {
+      const params = this.getBasicParameters();
+      const modelType = $("#modelType").val();
+      const simulations = parseInt($("#simulations").val()) || 100000;
+
+      const data = { ...params, model: modelType, simulations };
+
+      if (modelType === "heston") {
+        data.kappa = parseFloat($("#kappa").val());
+        data.theta = parseFloat($("#theta").val());
+        data.sigma_v = parseFloat($("#sigma_v").val());
+        data.rho = parseFloat($("#rho").val());
+        data.v0 = data.theta; // Initial variance = long-term variance
+      } else if (modelType === "jump_diffusion") {
+        data.lambda = parseFloat($("#lambda").val());
+        data.mu_j = parseFloat($("#mu_j").val());
+        data.sigma_j = parseFloat($("#sigma_j").val());
+      }
+
+      const response = await fetch("/api/monte_carlo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+
+      const result = await response.json();
+      if (result.error) {
+        this.showAlert(result.error, "danger");
+        return;
+      }
+      this.displayAdvancedResults(result);
+    } catch (error) {
+      console.error("Advanced calculation error:", error);
+      this.showAlert("Error in advanced calculation.", "danger");
+    }
+  }
+
+  displayAdvancedResults(result) {
+    let html = `
+      <div class="alert alert-info">
+        <h6><i class="fas fa-rocket me-2"></i>Monte Carlo Results</h6>
+        <small>Model: ${
+          result.model_type?.toUpperCase() || "Unknown"
+        } | Simulations: ${
+      result.simulations?.toLocaleString() || "Unknown"
+    }</small>
+      </div>
+      <table class="table table-dark table-striped table-sm">
+    `;
+
+    const metrics = {
+      "Option Price": result.option_price,
+      "Std Error": result.std_error,
+      Delta: result.delta,
+      Gamma: result.gamma,
+      Vega: result.vega,
+      Theta: result.theta,
+      Rho: result.rho,
+    };
+
+    Object.entries(metrics).forEach(([key, value]) => {
+      if (typeof value === "number") {
+        const isDollarValue =
+          key.includes("Price") ||
+          key.includes("Theta") ||
+          key.includes("Rho");
+        const formattedValue = isDollarValue
+          ? `$${value.toFixed(4)}`
+          : value.toFixed(6);
+        html += `<tr><td>${key}</td><td>${formattedValue}</td></tr>`;
+      }
+    });
+
+    if (result.confidence_interval) {
+      html += `<tr><td>95% CI</td><td>[$${result.confidence_interval[0].toFixed(
+        4
+      )}, $${result.confidence_interval[1].toFixed(4)}]</td></tr>`;
+    }
+
+    html += "</table>";
+    $("#advancedResults").html(html);
   }
 
   async calculateBasic(model) {
