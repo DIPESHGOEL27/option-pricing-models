@@ -1,9 +1,38 @@
 # Deployment Guide
 
-## Railway (primary)
+## Render (primary, free)
 
-This is the platform this project actually deploys to (`railway.toml`,
-`nixpacks.toml`, `Procfile`).
+This is the current recommended free deployment target (`render.yaml`,
+`requirements.txt`, full feature set including ML pricing — Render's native
+Python runtime has no serverless size cap, unlike Vercel).
+
+1. Go to [Render](https://render.com) and sign in with GitHub.
+2. **New → Blueprint** → select this repository. Render auto-detects
+   `render.yaml` and configures the service (build: `pip install -r
+   requirements.txt`; start: `gunicorn api.app:app`; health check:
+   `/api/status`) with no manual field-filling required.
+3. Select the **Free** plan when prompted and click **Apply**.
+4. No environment variables are required; `PORT` is set automatically by
+   Render.
+
+The free plan spins the service down after ~15 minutes of inactivity; the
+next request wakes it, which takes roughly 30-50 seconds. This is a real
+cold-start cost, not a bug — acceptable for a demo/portfolio deployment, not
+for a low-latency production use case.
+
+Once deployed, verify with:
+
+```bash
+curl https://<your-app>.onrender.com/api/status
+```
+
+## Railway
+
+`railway.toml`, `nixpacks.toml`, and `Procfile` are also configured for
+Railway and this project has previously run there. Railway's free tier is
+usage-credit based and may be exhausted or unavailable depending on your
+account's current credit balance — check [Railway.app](https://railway.app)
+directly rather than assuming free capacity is available.
 
 1. Go to [Railway.app](https://railway.app) and sign in with GitHub.
 2. **New Project → Deploy from GitHub repo** → select this repository.
@@ -19,12 +48,6 @@ Once deployed, verify with:
 ```bash
 curl https://<your-app>.up.railway.app/api/status
 ```
-
-### Alternative: Render / Heroku-style platforms
-
-`Procfile` (`web: gunicorn api.app:app --bind 0.0.0.0:$PORT --workers 1
---timeout 120 --preload`) targets Procfile-based platforms like Render or
-Heroku, as an alternative to Railway's own `railway.toml` start command.
 
 ## Docker
 
@@ -52,6 +75,11 @@ with an actual Vercel deploy — treat it as untested until confirmed. Note
 also that `NSELive`'s session/cookie bootstrap against nseindia.com adds
 real latency on a cold serverless start; expect the first India-market
 request after an idle period to be noticeably slower than subsequent ones.
+
+`api/app.py` previously had an unconditional `import matplotlib.pyplot`
+that was never actually called (the app renders all charts through Plotly)
+but was not in `requirements-vercel.txt` — this would have crashed the app
+at import time on Vercel. That dead import has been removed.
 
 ```bash
 npm i -g vercel

@@ -9,9 +9,6 @@ from datetime import datetime, timedelta
 import json
 import io
 import base64
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 import plotly.graph_objs as go
 import plotly.express as px
 from plotly.utils import PlotlyJSONEncoder

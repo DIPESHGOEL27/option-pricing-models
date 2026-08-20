@@ -22,18 +22,13 @@ def create_requirements(mode="full"):
     light_deps = [
         "plotly>=5.17.0,<6.0.0",
         "yfinance>=0.2.0,<1.0.0",
-        "matplotlib>=3.6.0,<4.0.0",
         "jugaad-data>=0.35.0,<1.0.0"
     ]
-    
+
     heavy_deps = [
         "scikit-learn>=1.1.0,<2.0.0",
         "xgboost>=2.0.0,<4.0.0",
-        "seaborn>=0.12.0,<1.0.0",
-        "statsmodels>=0.13.0,<1.0.0",
-        "joblib>=1.2.0,<2.0.0",
-        "aiohttp>=3.8.0,<4.0.0",
-        "cvxpy>=1.2.0,<2.0.0"
+        "joblib>=1.2.0,<2.0.0"
     ]
     
     requirements = core_deps.copy()
@@ -64,15 +59,15 @@ def main():
         for req in requirements:
             f.write(f"{req}\n")
     
-    print(f"✅ Updated requirements.txt for {mode} deployment")
-    print(f"📦 {len(requirements)} packages included")
-    
+    print(f"Updated requirements.txt for {mode} deployment")
+    print(f"{len(requirements)} packages included")
+
     if mode == "minimal":
-        print("⚠️  Only basic features available (Black-Scholes, Greeks)")
-    elif mode == "light": 
-        print("📈 Basic + plotting features available")
+        print("Only basic features available (Black-Scholes, Greeks)")
+    elif mode == "light":
+        print("Basic + plotting + India market data available (no ML pricing)")
     else:
-        print("🚀 All features available (may exceed some deployment limits)")
+        print("All features available, including ML pricing")
 
 if __name__ == "__main__":
     main()

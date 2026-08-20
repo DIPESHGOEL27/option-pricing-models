@@ -3,7 +3,7 @@
 ```
 Option_Pricing_Models/
 ├── .gitignore                      # Git ignore rules
-├── .python-version                 # Python version for Railway
+├── .python-version                 # Python version pin (Railway, Render)
 ├── __init__.py                     # Makes root a Python package
 ├── main.py                         # Entry point for Railway deployment
 ├── setup.py                        # Python package setup
@@ -13,15 +13,16 @@ Option_Pricing_Models/
 │
 │   # Deployment configuration
 ├── Dockerfile                      # Container build (Docker / any container host)
-├── Procfile                        # For Render/Heroku-style platforms
-├── railway.toml                    # Railway build + start command (primary deploy target)
+├── Procfile                        # Start command for Render/Heroku-style platforms
+├── render.yaml                     # Render Blueprint (primary free deploy target)
+├── railway.toml                    # Railway build + start command
 ├── railway.json                    # Railway build config
 ├── nixpacks.toml                   # Nixpacks build config (used by Railway)
 ├── vercel.json                     # Vercel deployment config
 │
 │   # Documentation
 ├── README.md                       # Main project documentation
-├── DEPLOYMENT.md                   # Deployment guide (Railway, Docker, Vercel)
+├── DEPLOYMENT.md                   # Deployment guide (Render, Railway, Docker, Vercel)
 ├── MODEL_VALIDATION_GUIDE.md       # Statistical validation methodology + real results
 │
 │   # Utilities
