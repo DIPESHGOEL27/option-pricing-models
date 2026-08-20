@@ -753,6 +753,11 @@ body::before {
   box-shadow: 0 0 6px var(--accent-green);
 }
 
+.status-offline {
+  background: var(--accent-red);
+  box-shadow: 0 0 6px var(--accent-red);
+}
+
 /* Quick Action Menu Styles */
 .quick-action-menu {
   position: fixed;

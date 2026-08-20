@@ -22,7 +22,8 @@ def create_requirements(mode="full"):
     light_deps = [
         "plotly>=5.17.0,<6.0.0",
         "yfinance>=0.2.0,<1.0.0",
-        "matplotlib>=3.6.0,<4.0.0"
+        "matplotlib>=3.6.0,<4.0.0",
+        "jugaad-data>=0.35.0,<1.0.0"
     ]
     
     heavy_deps = [

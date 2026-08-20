@@ -8,6 +8,8 @@ class OptionPricingPlatform {
     this.portfolio = [];
     this.marketData = {};
     this.currentSymbol = "";
+    this.currentMarket = "us"; // "us" | "india_nse" | "india_bse"
+    this.currencyCode = "USD";
     this.init();
   }
   init() {
@@ -90,6 +92,15 @@ class OptionPricingPlatform {
     $("#modelType").on("change", this.onModelTypeChange.bind(this));
     $("#calculateAdvanced").on("click", this.calculateAdvanced.bind(this));
 
+    // Market selector (US / India NSE / India BSE)
+    $("#marketSelector").on("change", this.onMarketChange.bind(this));
+
+    // India NSE option chain
+    $("#fetchIndiaOptionChainBtn").on(
+      "click",
+      this.fetchIndiaOptionChain.bind(this)
+    );
+
     // Market data
     $("#getDataBtn").on("click", this.getMarketData.bind(this));
     $("#symbolInput").on("keypress", (e) => {
@@ -137,6 +148,9 @@ class OptionPricingPlatform {
   }
 
   async loadMarketDashboard() {
+    if (this.currentMarket !== "us") {
+      return this.loadIndiaMarketDashboard();
+    }
     try {
       const response = await fetch("/api/market_sentiment");
 
@@ -187,6 +201,75 @@ class OptionPricingPlatform {
 
       this.showNotification(
         "Warning: Unable to load real-time market data",
+        "warning"
+      );
+    }
+  }
+
+  async loadIndiaMarketDashboard() {
+    try {
+      const response = await fetch("/api/india_market_sentiment");
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      if (data.india_vix && !data.india_vix.error && data.india_vix.vix_level != null) {
+        $("#vixLevel").text(data.india_vix.vix_level.toFixed(2));
+        $("#vixSentiment").text("India VIX");
+        $("#fearGreedScore").text(
+          data.india_vix.fear_greed_score != null
+            ? data.india_vix.fear_greed_score.toFixed(0)
+            : "--"
+        );
+      } else {
+        $("#vixLevel").text("--");
+        $("#vixSentiment").text("Loading...");
+        $("#fearGreedScore").text("--");
+      }
+
+      if (data.pcr && !data.pcr.error) {
+        $("#putCallRatio").text(data.pcr.oi_pcr.toFixed(2));
+        $("#putCallSentiment").text(data.pcr.sentiment);
+      } else {
+        $("#putCallRatio").text("--");
+        $("#putCallSentiment").text("Loading...");
+      }
+
+      if (
+        data.risk_free_rate &&
+        !data.risk_free_rate.error &&
+        data.risk_free_rate.ten_year_proxy
+      ) {
+        const rate = data.risk_free_rate.ten_year_proxy;
+        $("#treasury10Y").text((rate * 100).toFixed(2) + "%");
+        $("#r").val(rate.toFixed(4));
+      } else {
+        $("#treasury10Y").text("--");
+      }
+
+      if (data.market_status && data.market_status.marketStatus) {
+        const isOpen = data.market_status.marketStatus === "Open";
+        $("#marketStatus").html(
+          `<span class="status-indicator ${
+            isOpen ? "status-online" : "status-offline"
+          }"></span> NSE ${data.market_status.marketStatus}`
+        );
+      }
+    } catch (error) {
+      console.error("Error loading India market dashboard:", error);
+
+      $("#vixLevel").text("--");
+      $("#vixSentiment").text("Error loading");
+      $("#putCallRatio").text("--");
+      $("#putCallSentiment").text("Error loading");
+      $("#treasury10Y").text("--");
+      $("#fearGreedScore").text("--");
+
+      this.showNotification(
+        "Warning: Unable to load India market data",
         "warning"
       );
     }
@@ -270,16 +353,17 @@ class OptionPricingPlatform {
           key.includes("Theta") ||
           key.includes("Rho");
         const formattedValue = isDollarValue
-          ? `$${value.toFixed(4)}`
+          ? this.formatCurrency(value, 4)
           : value.toFixed(6);
         html += `<tr><td>${key}</td><td>${formattedValue}</td></tr>`;
       }
     });
 
     if (result.confidence_interval) {
-      html += `<tr><td>95% CI</td><td>[$${result.confidence_interval[0].toFixed(
+      html += `<tr><td>95% CI</td><td>[${this.formatCurrency(
+        result.confidence_interval[0],
         4
-      )}, $${result.confidence_interval[1].toFixed(4)}]</td></tr>`;
+      )}, ${this.formatCurrency(result.confidence_interval[1], 4)}]</td></tr>`;
     }
 
     html += "</table>";
@@ -318,9 +402,59 @@ class OptionPricingPlatform {
     }
   }
 
+  // Switches the dashboard between US and India (NSE/BSE) markets.
+  // Backend routes stay the same for both -- this only changes which
+  // symbol suffix getMarketData() appends and which endpoints/labels the
+  // dashboard widget and option-chain tab use.
+  onMarketChange() {
+    const market = $("#marketSelector").val();
+    this.currentMarket = market;
+    this.currencyCode = market === "us" ? "USD" : "INR";
+
+    const isIndia = market !== "us";
+    $("#india-options-tab").toggle(isIndia);
+    if (!isIndia) {
+      // The India Options tab may be hidden while active -- fall back to
+      // Basic Models rather than leaving a hidden tab "selected".
+      const indiaTabActive = $("#india-options-tab").hasClass("active");
+      if (indiaTabActive) {
+        document.getElementById("basic-tab").click();
+      }
+    }
+
+    if (isIndia) {
+      $("#vixLabel").text("India VIX");
+      $("#putCallLabel").text("Nifty PCR");
+      $("#treasuryLabel").text("RBI G-Sec (~10Y)");
+    } else {
+      $("#vixLabel").text("VIX");
+      $("#putCallLabel").text("Put/Call Ratio");
+      $("#treasuryLabel").text("10Y Treasury");
+      // The India branch overwrites this badge with NSE's live status;
+      // restore the static US default rather than leaving it stale.
+      $("#marketStatus").html(
+        '<span class="status-indicator status-online"></span> Market Open'
+      );
+    }
+
+    this.resetPortfolioSummary();
+    this.loadMarketDashboard();
+  }
+
+  // .NS/.BO suffixing happens client-side so the existing, already-working
+  // /api/market_data/<symbol> route (yfinance-backed) stays market-agnostic.
+  // The dedicated India routes (option chain, sentiment) take a bare symbol
+  // instead -- a real convention difference, not something to paper over.
+  getSuffixedSymbol(symbol) {
+    if (this.currentMarket === "india_nse") return `${symbol}.NS`;
+    if (this.currentMarket === "india_bse") return `${symbol}.BO`;
+    return symbol;
+  }
+
   async getMarketData() {
-    const symbol = $("#symbolInput").val().toUpperCase();
-    if (!symbol) return;
+    const rawSymbol = $("#symbolInput").val().toUpperCase();
+    if (!rawSymbol) return;
+    const symbol = this.getSuffixedSymbol(rawSymbol);
 
     try {
       const response = await fetch(`/api/market_data/${symbol}`);
@@ -427,13 +561,13 @@ class OptionPricingPlatform {
                     <tr>
                         <td>${pos.symbol}</td>
                         <td>${pos.option_type.toUpperCase()}</td>
-                        <td>$${pos.strike}</td>
+                        <td>${this.formatCurrency(pos.strike, 0)}</td>
                         <td>${pos.quantity}</td>
-                        <td>$${posValue.toFixed(2)}</td>
+                        <td>${this.formatCurrency(posValue)}</td>
                         <td class="${
                           pnl >= 0 ? "text-success" : "text-danger"
                         }">
-                            $${pnl.toFixed(2)}
+                            ${this.formatCurrency(pnl)}
                         </td>
                         <td>
                             <button class="btn btn-sm btn-danger remove-position-btn" data-position-id="${
@@ -550,6 +684,102 @@ class OptionPricingPlatform {
       console.error("Volatility smile error:", error);
       this.showAlert("Error generating volatility smile.", "danger");
     }
+  }
+
+  async fetchIndiaOptionChain() {
+    if (this.currentMarket === "india_bse") {
+      $("#indiaOptionsUnavailable").show();
+      $("#indiaOptionsContent").hide();
+      return;
+    }
+
+    const symbol = ($("#indiaOptionSymbol").val() || "NIFTY").toUpperCase();
+    const expiry = $("#indiaOptionExpiry").val();
+    const url = expiry
+      ? `/api/india/option_chain/${symbol}?expiry=${encodeURIComponent(
+          expiry
+        )}`
+      : `/api/india/option_chain/${symbol}`;
+
+    try {
+      const response = await fetch(url);
+      const result = await response.json();
+
+      if (result.error) {
+        this.showAlert(result.error, "danger");
+        return;
+      }
+
+      $("#indiaOptionsUnavailable").hide();
+      $("#indiaOptionsContent").show();
+
+      // Populate the expiry dropdown once per fetch (keeps the currently
+      // selected expiry, defaults to the nearest one on first load).
+      const expirySelect = $("#indiaOptionExpiry");
+      const currentSelection = expirySelect.val();
+      expirySelect.html('<option value="">Nearest</option>');
+      (result.expiry_dates || []).forEach((date) => {
+        expirySelect.append(
+          `<option value="${date}">${date}</option>`
+        );
+      });
+      if (currentSelection) expirySelect.val(currentSelection);
+
+      $("#indiaOptionUnderlying").text(
+        this.formatCurrency(result.underlying_value, 2, "INR")
+      );
+      $("#indiaOptionPcr").text(
+        result.pcr && !result.pcr.error ? result.pcr.oi_pcr.toFixed(2) : "N/A"
+      );
+      $("#indiaOptionSentiment").text(
+        result.pcr && !result.pcr.error ? result.pcr.sentiment : "N/A"
+      );
+      $("#indiaOptionMaxPain").text(
+        result.max_pain && !result.max_pain.error
+          ? result.max_pain.strike
+          : "N/A"
+      );
+
+      this.renderIndiaOptionChainTable(
+        result.strikes,
+        result.max_pain?.strike
+      );
+
+      if (result.plot) {
+        const plotData = JSON.parse(result.plot);
+        Plotly.newPlot("oiChart", plotData.data, plotData.layout);
+      }
+    } catch (error) {
+      console.error("India option chain error:", error);
+      this.showAlert("Error fetching NSE option chain.", "danger");
+    }
+  }
+
+  renderIndiaOptionChainTable(rows, maxPainStrike) {
+    const sorted = [...(rows || [])].sort(
+      (a, b) => (a.strikePrice || 0) - (b.strikePrice || 0)
+    );
+
+    const tbody = sorted
+      .map((row) => {
+        const ce = row.CE || {};
+        const pe = row.PE || {};
+        const isMaxPain = row.strikePrice === maxPainStrike;
+        return `
+          <tr class="${isMaxPain ? "table-warning text-dark" : ""}">
+            <td>${ce.openInterest ?? "--"}</td>
+            <td>${this.formatCurrency(ce.lastPrice, 2, "INR")}</td>
+            <td>${ce.impliedVolatility?.toFixed(1) ?? "--"}</td>
+            <td class="fw-bold">${row.strikePrice}</td>
+            <td>${pe.impliedVolatility?.toFixed(1) ?? "--"}</td>
+            <td>${this.formatCurrency(pe.lastPrice, 2, "INR")}</td>
+            <td>${pe.openInterest ?? "--"}</td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    $("#indiaOptionChainTable tbody").html(tbody);
   }
 
   showGreeksSensitivity() {
@@ -681,15 +911,18 @@ class OptionPricingPlatform {
       $("#mlPriceComparison").html(`
                 <div class="row">
                     <div class="col-6">
-                        <strong>ML Price:</strong> $${result.ml_price.toFixed(
+                        <strong>ML Price:</strong> ${this.formatCurrency(
+                          result.ml_price,
                           4
                         )}<br>
-                        <strong>BS Price:</strong> $${result.black_scholes_price.toFixed(
+                        <strong>BS Price:</strong> ${this.formatCurrency(
+                          result.black_scholes_price,
                           4
                         )}
                     </div>
                     <div class="col-6">
-                        <strong>Difference:</strong> $${result.price_difference.toFixed(
+                        <strong>Difference:</strong> ${this.formatCurrency(
+                          result.price_difference,
                           4
                         )}<br>
                         <strong>Relative:</strong> ${result.relative_difference.toFixed(
@@ -739,16 +972,17 @@ class OptionPricingPlatform {
       }
 
       $("#riskResults").show();
+      const currencySymbol = this.currencySymbol();
       $("#riskMetricsDisplay").html(`
                 <div class="row">
                     <div class="col-6">
-                        <strong>Portfolio Value:</strong> $${result.portfolio_value.toLocaleString()}<br>
+                        <strong>Portfolio Value:</strong> ${currencySymbol}${result.portfolio_value.toLocaleString()}<br>
                         <strong>VaR (${(data.confidence_level * 100).toFixed(
                           0
-                        )}%):</strong> $${Math.abs(
+                        )}%):</strong> ${currencySymbol}${Math.abs(
         result.var.historical
       ).toLocaleString()}<br>
-                        <strong>Expected Shortfall:</strong> $${Math.abs(
+                        <strong>Expected Shortfall:</strong> ${currencySymbol}${Math.abs(
                           result.expected_shortfall
                         ).toLocaleString()}
                     </div>
@@ -820,7 +1054,7 @@ class OptionPricingPlatform {
                       0
                     )} shares<br>
                     Recommendation: <strong>${result.recommendation.toUpperCase()}</strong><br>
-                    Hedge Cost: $${result.hedge_cost.toFixed(2)}
+                    Hedge Cost: ${this.formatCurrency(result.hedge_cost)}
                 </div>
             `);
     } catch (error) {
@@ -832,10 +1066,15 @@ class OptionPricingPlatform {
   }
 
   async getMarketSentiment() {
-    const symbol = $("#sentimentSymbol").val() || "SPY";
+    const isIndia = this.currentMarket !== "us";
+    const defaultSymbol = isIndia ? "NIFTY" : "SPY";
+    const symbol = $("#sentimentSymbol").val() || defaultSymbol;
+    const market = isIndia ? "india" : "us";
 
     try {
-      const response = await fetch(`/api/market/sentiment?symbol=${symbol}`);
+      const response = await fetch(
+        `/api/market/sentiment?symbol=${symbol}&market=${market}`
+      );
       const result = await response.json();
 
       if (result.error) {
@@ -918,7 +1157,7 @@ class OptionPricingPlatform {
           key.includes("theta") ||
           key.includes("rho") ||
           key.includes("vega")
-            ? `$${value.toFixed(4)}`
+            ? this.formatCurrency(value, 4)
             : value.toFixed(6);
         html += `<tr><td>${this.formatKey(
           key
@@ -932,7 +1171,7 @@ class OptionPricingPlatform {
 
   displayMarketData(data) {
     const tableHTML = `
-            <tr><td>Price</td><td>$${data.price?.toFixed(2) || "N/A"}</td></tr>
+            <tr><td>Price</td><td>${this.formatCurrency(data.price)}</td></tr>
             <tr><td>Change</td><td class="${
               data.day_change >= 0 ? "text-success" : "text-danger"
             }">
@@ -964,7 +1203,8 @@ class OptionPricingPlatform {
                 <h6><i class="fas fa-exclamation-triangle me-2"></i>Stress Test Results</h6>
             </div>
             <table class="table table-dark table-striped table-sm">
-                <tr><td>Base Price</td><td>$${result.base_price?.toFixed(
+                <tr><td>Base Price</td><td>${this.formatCurrency(
+                  result.base_price,
                   4
                 )}</td></tr>
         `;
@@ -976,7 +1216,8 @@ class OptionPricingPlatform {
                     <tr>
                         <td>${scenario.replace("_", " ").toUpperCase()}</td>
                         <td class="${pnlClass}">
-                            $${data.pnl_impact?.toFixed(
+                            ${this.formatCurrency(
+                              data.pnl_impact,
                               4
                             )} (${data.pnl_percent?.toFixed(2)}%)
                         </td>
@@ -1007,15 +1248,18 @@ class OptionPricingPlatform {
                 }</small>
             </div>
             <table class="table table-dark table-striped table-sm">
-                <tr><td>Black-Scholes Price</td><td>$${validation.black_scholes_price?.toFixed(
+                <tr><td>Black-Scholes Price</td><td>${this.formatCurrency(
+                  validation.black_scholes_price,
                   4
                 )}</td></tr>
-                <tr><td>Monte Carlo Price</td><td>$${validation.monte_carlo_price?.toFixed(
+                <tr><td>Monte Carlo Price</td><td>${this.formatCurrency(
+                  validation.monte_carlo_price,
                   4
                 )}</td></tr>
-                <tr><td>Absolute Error</td><td>$${(
-                  validation.price_difference || validation.absolute_error
-                )?.toFixed(6)}</td></tr>
+                <tr><td>Absolute Error</td><td>${this.formatCurrency(
+                  validation.price_difference || validation.absolute_error,
+                  6
+                )}</td></tr>
                 <tr><td>Relative Error</td><td>${(
                   validation.relative_error * 100
                 )?.toFixed(4)}%</td></tr>
@@ -1026,8 +1270,8 @@ class OptionPricingPlatform {
   }
 
   updatePortfolioSummary(summary) {
-    $("#totalValue").text(`$${summary.portfolio_value?.toFixed(2) || "0.00"}`);
-    $("#totalPnL").text(`$${summary.total_pnl?.toFixed(2) || "0.00"}`);
+    $("#totalValue").text(this.formatCurrency(summary.portfolio_value ?? 0));
+    $("#totalPnL").text(this.formatCurrency(summary.total_pnl ?? 0));
 
     if (summary.portfolio_greeks) {
       $("#portfolioDelta").text(
@@ -1040,15 +1284,15 @@ class OptionPricingPlatform {
         summary.portfolio_greeks.vega?.toFixed(4) || "0.00"
       );
       $("#portfolioTheta").text(
-        `$${summary.portfolio_greeks.theta?.toFixed(2) || "0.00"}`
+        this.formatCurrency(summary.portfolio_greeks.theta ?? 0)
       );
     }
   }
 
   resetPortfolioSummary() {
-    $("#totalValue, #totalPnL").text("$0.00");
+    $("#totalValue, #totalPnL").text(this.formatCurrency(0));
     $("#portfolioDelta, #portfolioGamma, #portfolioVega").text("0.00");
-    $("#portfolioTheta").text("$0.00");
+    $("#portfolioTheta").text(this.formatCurrency(0));
   }
 
   formatKey(key) {
@@ -1057,6 +1301,20 @@ class OptionPricingPlatform {
       .replace(/\b\w/g, (l) => l.toUpperCase())
       .replace("Option Price", "Price")
       .replace("Std Error", "Std. Error");
+  }
+
+  // Currency-aware formatting -- symbol follows this.currencyCode, which
+  // onMarketChange() sets based on the selected market (USD for US, INR for
+  // India NSE/BSE).
+  formatCurrency(value, decimals = 2, currencyCode = this.currencyCode) {
+    if (value === null || value === undefined || isNaN(value)) return "N/A";
+    return `${this.currencySymbol(currencyCode)}${Number(value).toFixed(
+      decimals
+    )}`;
+  }
+
+  currencySymbol(currencyCode = this.currencyCode) {
+    return currencyCode === "INR" ? "₹" : "$";
   }
 
   showAlert(message, type = "info") {
@@ -1110,6 +1368,12 @@ class OptionPricingPlatform {
     // This runs silently on a 30s background timer (see startRealTimeUpdates)
     // -- it must not show the full-page loading overlay, which is reserved
     // for user-initiated actions.
+    if (this.currentMarket !== "us") {
+      // India's dashboard fields are all served by one cached endpoint
+      // (IndiaMarketDataProvider caches for ~90s server-side), so reuse
+      // loadIndiaMarketDashboard() rather than duplicating fetch logic here.
+      return this.loadIndiaMarketDashboard();
+    }
     try {
       // Update VIX data
       const vixResponse = await fetch("/api/market_data/^VIX");

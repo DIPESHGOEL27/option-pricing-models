@@ -18,14 +18,31 @@ from plotly.utils import PlotlyJSONEncoder
 
 # Import market data provider
 try:
-    from .market_data import MarketDataProvider, VolatilityEstimator
+    from .market_data import MarketDataProvider, VolatilityEstimator, MarketSentimentIndicators, RiskFreeRateProvider
     BASIC_MARKET_DATA_AVAILABLE = True
 except ImportError:
     try:
-        from market_data import MarketDataProvider, VolatilityEstimator
+        from market_data import MarketDataProvider, VolatilityEstimator, MarketSentimentIndicators, RiskFreeRateProvider
         BASIC_MARKET_DATA_AVAILABLE = True
     except ImportError:
         BASIC_MARKET_DATA_AVAILABLE = False
+
+# Import India (NSE/BSE) market data provider
+try:
+    from .india_market_data import (
+        IndiaMarketDataProvider, IndiaRiskFreeRateProvider,
+        calculate_put_call_ratio, calculate_max_pain, summarize_oi_buildup
+    )
+    INDIA_MARKET_DATA_AVAILABLE = True
+except ImportError:
+    try:
+        from india_market_data import (
+            IndiaMarketDataProvider, IndiaRiskFreeRateProvider,
+            calculate_put_call_ratio, calculate_max_pain, summarize_oi_buildup
+        )
+        INDIA_MARKET_DATA_AVAILABLE = True
+    except ImportError:
+        INDIA_MARKET_DATA_AVAILABLE = False
 
 # Import our advanced modules
 try:
@@ -90,7 +107,8 @@ except ImportError:
 # Check overall advanced features availability
 ADVANCED_FEATURES_AVAILABLE = any([
     MONTE_CARLO_AVAILABLE, RISK_FEATURES_AVAILABLE, MARKET_DATA_AVAILABLE,
-    ML_FEATURES_AVAILABLE, VALIDATION_AVAILABLE, ADVANCED_PRICING_AVAILABLE
+    ML_FEATURES_AVAILABLE, VALIDATION_AVAILABLE, ADVANCED_PRICING_AVAILABLE,
+    INDIA_MARKET_DATA_AVAILABLE
 ])
 
 # Ensure Python can find the modules in the current directory
@@ -931,44 +949,64 @@ def run_model_backtest():
 
 @app.route('/api/market/sentiment', methods=['GET'])
 def get_market_sentiment():
-    """Get advanced market sentiment indicators"""
+    """Get real market sentiment indicators (VIX + put/call ratio) for US or India."""
     try:
+        market = request.args.get('market', 'us').lower()
+
+        if market == 'india':
+            if not INDIA_MARKET_DATA_AVAILABLE:
+                return jsonify({'error': 'India market data features are not available'})
+
+            symbol = request.args.get('symbol', 'NIFTY')
+            india_data = MarketDataProvider().get_stock_price('^INDIAVIX')
+            if 'error' in india_data:
+                return jsonify(india_data)
+            vix_level = india_data['price']
+
+            chain = IndiaMarketDataProvider().get_option_chain(symbol)
+            if 'error' in chain:
+                return jsonify(chain)
+            pcr_data = calculate_put_call_ratio(chain['rows'])
+
+            fear_greed_index = max(0, min(100, 100 - (vix_level - 10) * 2))
+            overall_sentiment = 'greedy' if fear_greed_index > 60 else 'fearful' if fear_greed_index < 40 else 'neutral'
+
+            return jsonify({
+                'symbol': symbol,
+                'market': 'india',
+                'sentiment_indicators': {
+                    'fear_greed_index': fear_greed_index,
+                    'put_call_ratio': pcr_data['oi_pcr'],
+                    'vix_level': vix_level
+                },
+                'overall_sentiment': overall_sentiment,
+                'market_regime': 'high_volatility' if vix_level > 25 else 'low_volatility' if vix_level < 15 else 'normal'
+            })
+
         symbol = request.args.get('symbol', 'SPY')
-        
-        # Mock sentiment data
-        sentiment_data = {
-            'fear_greed_index': float(np.random.uniform(20, 80)),
-            'put_call_ratio': float(np.random.uniform(0.8, 1.5)),
-            'vix_level': float(np.random.uniform(15, 35)),
-            'term_structure_slope': float(np.random.uniform(-0.1, 0.1)),
-            'sentiment_score': float(np.random.uniform(-1, 1))
-        }
-        
-        # Simple interpretation logic
-        overall_sentiment = 'neutral'
-        if sentiment_data['fear_greed_index'] > 60:
-            overall_sentiment = 'greedy'
-        elif sentiment_data['fear_greed_index'] < 40:
-            overall_sentiment = 'fearful'
-            
-        market_regime = 'normal'
-        if sentiment_data['vix_level'] > 25:
-            market_regime = 'high_volatility'
-        elif sentiment_data['vix_level'] < 15:
-            market_regime = 'low_volatility'
-        
+        sentiment = MarketSentimentIndicators()
+
+        vix_data = sentiment.get_vix_data()
+        if not vix_data or 'error' in vix_data:
+            return jsonify(vix_data or {'error': 'Failed to fetch VIX data'})
+
+        pcr_data = sentiment.get_put_call_ratio(symbol)
+        put_call_ratio = pcr_data.get('put_call_ratio', 0) if pcr_data and 'error' not in pcr_data else 0
+
+        overall_sentiment = 'greedy' if vix_data['fear_greed_score'] > 60 else 'fearful' if vix_data['fear_greed_score'] < 40 else 'neutral'
+
         return jsonify({
             'symbol': symbol,
-            'sentiment_indicators': sentiment_data,
-            'overall_sentiment': overall_sentiment,
-            'market_regime': market_regime,
-            'trading_recommendations': {
-                'action': 'hold' if overall_sentiment == 'neutral' else 'caution',
-                'confidence': 0.7
+            'market': 'us',
+            'sentiment_indicators': {
+                'fear_greed_index': vix_data['fear_greed_score'],
+                'put_call_ratio': put_call_ratio,
+                'vix_level': vix_data['vix_level']
             },
-            'risk_warnings': ['High volatility detected'] if sentiment_data['vix_level'] > 30 else []
+            'overall_sentiment': overall_sentiment,
+            'market_regime': 'high_volatility' if vix_data['vix_level'] > 25 else 'low_volatility' if vix_data['vix_level'] < 15 else 'normal'
         })
-        
+
     except Exception as e:
         return jsonify({'error': str(e)})
 
@@ -1021,13 +1059,14 @@ def get_market_sentiment_simple():
                 # Keep fallback VIX data
                 pass
             
-            # Mock Put/Call Ratio (since real data is harder to get)
-            put_call_ratio = float(np.random.uniform(0.9, 1.3))
+            # Put/Call Ratio from the real option chain
+            pcr_result = MarketSentimentIndicators().get_put_call_ratio('SPY')
+            put_call_ratio = pcr_result.get('put_call_ratio', 1.0) if pcr_result and 'error' not in pcr_result else 1.0
             response_data['put_call_ratio'] = {
                 'put_call_ratio': put_call_ratio,
                 'sentiment': "Bearish" if put_call_ratio > 1.1 else "Bullish" if put_call_ratio < 0.9 else "Neutral"
             }
-            
+
             # Get Treasury rates
             try:
                 treasury_data = market_data.get_stock_price('^TNX')
@@ -1042,23 +1081,9 @@ def get_market_sentiment_simple():
                 
         except Exception as e:
             print(f"MarketDataProvider error: {e}")
-            # Use randomized fallback data to simulate market movement
-            vix_level = float(np.random.uniform(18, 25))
-            response_data['vix'] = {
-                'vix_level': vix_level,
-                'sentiment': "Moderate Fear" if vix_level > 20 else "Low Fear",
-                'fear_greed_score': int(65 + np.random.uniform(-15, 15))
-            }
-            
-            put_call_ratio = float(np.random.uniform(0.9, 1.3))
-            response_data['put_call_ratio'] = {
-                'put_call_ratio': put_call_ratio,
-                'sentiment': "Bearish" if put_call_ratio > 1.1 else "Bullish" if put_call_ratio < 0.9 else "Neutral"
-            }
-            
-            response_data['treasury_rates'] = {
-                '10Y': 0.04 + np.random.uniform(-0.01, 0.01)  # 4% +/- 1%
-            }
+            # response_data already holds the static fallback values defined
+            # above -- leave them as-is rather than fabricating random noise
+            # that would look like live market movement.
         
         return jsonify(response_data)
         
@@ -1295,6 +1320,134 @@ def plot_volatility_smile():
     except Exception as e:
         return jsonify({'error': str(e)})
 
+# =================== INDIA (NSE/BSE) MARKET DATA API ENDPOINTS ===================
+# Basic NSE/BSE equity price/history already works through the existing
+# /api/market_data/<symbol> etc. routes via yfinance's .NS/.BO suffixes --
+# these routes cover what yfinance does not provide for Indian markets:
+# real F&O option chains (via jugaad-data) and RBI-sourced risk-free rates.
+
+@app.route('/api/india/option_chain/<symbol>', methods=['GET'])
+def get_india_option_chain(symbol):
+    """Real NSE F&O option chain with PCR, max pain, and an OI buildup chart."""
+    try:
+        if not INDIA_MARKET_DATA_AVAILABLE:
+            return jsonify({'error': 'India market data features are not available'})
+
+        expiry = request.args.get('expiry')
+        chain = IndiaMarketDataProvider().get_option_chain(symbol.upper(), expiry)
+
+        if 'error' in chain:
+            return jsonify(chain)
+
+        rows = chain['rows']
+        pcr = calculate_put_call_ratio(rows)
+        max_pain = calculate_max_pain(rows)
+        buildup = summarize_oi_buildup(rows)
+
+        strikes = buildup['strikes']
+        max_pain_strike = max_pain.get('strike')
+        underlying = chain.get('underlying_value')
+
+        traces = [
+            go.Bar(x=strikes, y=buildup['call_oi'], name='Call OI', marker=dict(color='#dc3545')),
+            go.Bar(x=strikes, y=buildup['put_oi'], name='Put OI', marker=dict(color='#198754'))
+        ]
+
+        if underlying:
+            max_oi = max(buildup['call_oi'] + buildup['put_oi'], default=0)
+            traces.append(go.Scatter(
+                x=[underlying, underlying], y=[0, max_oi],
+                mode='lines', name='Spot Price',
+                line=dict(width=1, color='gray', dash='dot')
+            ))
+        if max_pain_strike is not None:
+            max_oi = max(buildup['call_oi'] + buildup['put_oi'], default=0)
+            traces.append(go.Scatter(
+                x=[max_pain_strike, max_pain_strike], y=[0, max_oi],
+                mode='lines', name='Max Pain',
+                line=dict(width=2, color='yellow', dash='dash')
+            ))
+
+        layout = go.Layout(
+            title=f"{chain['symbol']} Open Interest Buildup ({chain['expiry']})",
+            xaxis=dict(title='Strike Price'),
+            yaxis=dict(title='Open Interest'),
+            barmode='group',
+            template='plotly_dark',
+            hovermode='x unified',
+            showlegend=True
+        )
+
+        return jsonify({
+            'symbol': chain['symbol'],
+            'underlying_value': underlying,
+            'expiry': chain['expiry'],
+            'expiry_dates': chain['expiry_dates'],
+            'strikes': rows,
+            'pcr': pcr,
+            'max_pain': max_pain,
+            'plot': json.dumps({'data': traces, 'layout': layout}, cls=PlotlyJSONEncoder)
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+@app.route('/api/india_market_sentiment', methods=['GET'])
+def get_india_market_sentiment():
+    """India equivalent of /api/market_sentiment -- feeds the dashboard widget in India mode."""
+    try:
+        if not INDIA_MARKET_DATA_AVAILABLE:
+            return jsonify({'error': 'India market data features are not available'})
+
+        symbol = request.args.get('symbol', 'NIFTY')
+        india_provider = IndiaMarketDataProvider()
+
+        india_vix = MarketDataProvider().get_stock_price('^INDIAVIX')
+        nifty = MarketDataProvider().get_stock_price('^NSEI')
+        rates = IndiaRiskFreeRateProvider().get_rates()
+        market_status = india_provider.get_market_status()
+
+        pcr = {'error': 'Option chain unavailable'}
+        chain = india_provider.get_option_chain(symbol)
+        if 'error' not in chain:
+            pcr = calculate_put_call_ratio(chain['rows'])
+
+        capital_market_status = None
+        if 'error' not in market_status:
+            for segment in market_status.get('marketState', []):
+                if segment.get('market') == 'Capital Market':
+                    capital_market_status = segment
+                    break
+
+        vix_level = india_vix.get('price') if 'error' not in india_vix else None
+        fear_greed_score = max(0, min(100, 100 - (vix_level - 10) * 2)) if vix_level is not None else None
+
+        return jsonify({
+            'india_vix': {
+                'vix_level': vix_level,
+                'fear_greed_score': fear_greed_score
+            } if vix_level is not None else india_vix,
+            'pcr': pcr,
+            'risk_free_rate': rates,
+            'nifty': nifty if 'error' not in nifty else {'error': nifty.get('error')},
+            'market_status': capital_market_status or market_status
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+@app.route('/api/india/risk_free_rate', methods=['GET'])
+def get_india_risk_free_rate():
+    """RBI policy rate + G-Sec yields, used as an India risk-free-rate proxy."""
+    try:
+        if not INDIA_MARKET_DATA_AVAILABLE:
+            return jsonify({'error': 'India market data features are not available'})
+
+        return jsonify(IndiaRiskFreeRateProvider().get_rates())
+
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
 def _calculate_break_even_points(spot_range, payoff):
     """Calculate break-even points where payoff crosses zero"""
     break_even_points = []
@@ -1387,6 +1540,7 @@ def deployment_status():
             'ml_features': ML_FEATURES_AVAILABLE,
             'validation': VALIDATION_AVAILABLE,
             'advanced_pricing': ADVANCED_PRICING_AVAILABLE,
+            'india_market_data': INDIA_MARKET_DATA_AVAILABLE,
             'overall_advanced': ADVANCED_FEATURES_AVAILABLE
         },
         'core_libraries': {}

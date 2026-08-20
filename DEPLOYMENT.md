@@ -46,6 +46,13 @@ function limit. That means **the ML pricing endpoints
 Monte Carlo pricing are available there. Use Railway or Docker for the full
 feature set, including ML pricing.
 
+India/NSE market data (`jugaad-data`) is light enough to include in the
+Vercel build and is expected to work there, but this has not been verified
+with an actual Vercel deploy — treat it as untested until confirmed. Note
+also that `NSELive`'s session/cookie bootstrap against nseindia.com adds
+real latency on a cold serverless start; expect the first India-market
+request after an idle period to be noticeably slower than subsequent ones.
+
 ```bash
 npm i -g vercel
 vercel

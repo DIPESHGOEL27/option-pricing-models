@@ -75,6 +75,16 @@ _Real-time convergence monitoring for Monte Carlo simulations with variance redu
 - **Payoff Diagrams** for complex option strategies
 - **Performance Attribution** and backtesting framework
 
+### 🇮🇳 **India Market (NSE/BSE) Support**
+
+- **NSE/BSE equity quotes** via yfinance (`.NS`/`.BO` symbol suffixes)
+- **Real NSE F&O option chains** for indices (NIFTY, BANKNIFTY) and individual
+  stocks, via [jugaad-data](https://github.com/jugaad-py/jugaad-data)
+- **Put/Call Ratio, Max Pain, and OI buildup** analytics with an interactive chart
+- **RBI policy rate + G-Sec yields** as an India risk-free-rate proxy
+- One-click **market switcher** (US / India-NSE / India-BSE) that swaps the
+  dashboard, currency formatting, and symbol handling
+
 ### 🔬 **Model Validation & Testing**
 
 - **Cross-Validation** frameworks with time series splits
@@ -217,6 +227,7 @@ python main.py
 - **Matplotlib/Seaborn**: Statistical plotting
 - **Joblib**: Model serialization and caching
 - **Threading**: Concurrent processing
+- **jugaad-data**: Free NSE/BSE option chains and RBI rates
 
 ### **Deployment**
 

@@ -74,7 +74,7 @@
               <div class="row" id="marketDashboard">
                 <div class="col-md-3">
                   <div class="text-center">
-                    <h6 class="text-muted">VIX</h6>
+                    <h6 class="text-muted" id="vixLabel">VIX</h6>
                     <h4 id="vixLevel" class="text-warning">--</h4>
                     <small id="vixSentiment" class="text-muted"
                       >Loading...</small
@@ -83,7 +83,7 @@
                 </div>
                 <div class="col-md-3">
                   <div class="text-center">
-                    <h6 class="text-muted">Put/Call Ratio</h6>
+                    <h6 class="text-muted" id="putCallLabel">Put/Call Ratio</h6>
                     <h4 id="putCallRatio" class="text-info">--</h4>
                     <small id="putCallSentiment" class="text-muted"
                       >Loading...</small
@@ -92,7 +92,7 @@
                 </div>
                 <div class="col-md-3">
                   <div class="text-center">
-                    <h6 class="text-muted">10Y Treasury</h6>
+                    <h6 class="text-muted" id="treasuryLabel">10Y Treasury</h6>
                     <h4 id="treasury10Y" class="text-success">--</h4>
                     <small class="text-muted">Risk-free Rate</small>
                   </div>
@@ -171,6 +171,18 @@
                 >
                   <i class="fas fa-chart-area me-2"></i>Analysis
                 </button>
+                <button
+                  class="nav-link"
+                  id="india-options-tab"
+                  data-bs-toggle="pill"
+                  data-bs-target="#india-options-panel"
+                  role="tab"
+                  aria-selected="false"
+                  aria-controls="india-options-panel"
+                  style="display: none"
+                >
+                  <i class="fas fa-rupee-sign me-2"></i>NSE Options
+                </button>
               </div>
             </div>
           </div>
@@ -183,12 +195,21 @@
               </h6>
             </div>
             <div class="card-body">
+              <div class="mb-3">
+                <label class="form-label" for="marketSelector">Market</label>
+                <select class="form-select" id="marketSelector">
+                  <option value="us">US Markets</option>
+                  <option value="india_nse">India - NSE</option>
+                  <option value="india_bse">India - BSE</option>
+                </select>
+              </div>
               <div class="input-group mb-3">
                 <input
                   type="text"
                   class="form-control"
                   id="symbolInput"
                   placeholder="Symbol (e.g., AAPL)"
+                  list="indiaSymbols"
                 />
                 <button
                   class="btn btn-primary"
@@ -198,6 +219,14 @@
                   <i class="fas fa-search"></i>
                 </button>
               </div>
+              <datalist id="indiaSymbols">
+                <option value="RELIANCE"></option>
+                <option value="TCS"></option>
+                <option value="HDFCBANK"></option>
+                <option value="INFY"></option>
+                <option value="NIFTY"></option>
+                <option value="BANKNIFTY"></option>
+              </datalist>
               <div id="symbolData" class="d-none">
                 <table class="table table-sm table-dark">
                   <tbody id="symbolDataTable"></tbody>
@@ -934,6 +963,106 @@
                           </div>
                         </div>
                       </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- India (NSE) Options Panel -->
+            <div
+              class="tab-pane fade"
+              id="india-options-panel"
+              role="tabpanel"
+              aria-labelledby="india-options-tab"
+            >
+              <div class="card bg-dark">
+                <div class="card-header">
+                  <h5 class="mb-0">NSE Option Chain Analytics</h5>
+                </div>
+                <div class="card-body">
+                  <div class="row g-3 mb-3">
+                    <div class="col-md-4">
+                      <label class="form-label" for="indiaOptionSymbol"
+                        >Symbol</label
+                      >
+                      <input
+                        type="text"
+                        class="form-control"
+                        id="indiaOptionSymbol"
+                        value="NIFTY"
+                        list="indiaSymbols"
+                      />
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label" for="indiaOptionExpiry"
+                        >Expiry</label
+                      >
+                      <select class="form-select" id="indiaOptionExpiry">
+                        <option value="">Nearest</option>
+                      </select>
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                      <button
+                        type="button"
+                        class="btn btn-gradient-primary w-100"
+                        id="fetchIndiaOptionChainBtn"
+                      >
+                        <i class="fas fa-search me-2"></i>Fetch Chain
+                      </button>
+                    </div>
+                  </div>
+
+                  <div
+                    id="indiaOptionsUnavailable"
+                    class="alert alert-warning"
+                    style="display: none"
+                  >
+                    NSE option chain data is not available for BSE symbols --
+                    F&amp;O trades on NSE. Switch the market selector to
+                    "India - NSE" to use this panel.
+                  </div>
+
+                  <div id="indiaOptionsContent" style="display: none">
+                    <div class="row text-center mb-3">
+                      <div class="col-6 col-md-3">
+                        <small class="text-muted d-block">Underlying</small>
+                        <strong id="indiaOptionUnderlying">--</strong>
+                      </div>
+                      <div class="col-6 col-md-3">
+                        <small class="text-muted d-block">OI-based PCR</small>
+                        <strong id="indiaOptionPcr">--</strong>
+                      </div>
+                      <div class="col-6 col-md-3">
+                        <small class="text-muted d-block">Max Pain Strike</small>
+                        <strong id="indiaOptionMaxPain">--</strong>
+                      </div>
+                      <div class="col-6 col-md-3">
+                        <small class="text-muted d-block">Sentiment</small>
+                        <strong id="indiaOptionSentiment">--</strong>
+                      </div>
+                    </div>
+
+                    <div id="oiChart" style="height: 400px"></div>
+
+                    <div class="table-responsive mt-3">
+                      <table
+                        class="table table-dark table-sm table-striped"
+                        id="indiaOptionChainTable"
+                      >
+                        <thead>
+                          <tr>
+                            <th>Call OI</th>
+                            <th>Call LTP</th>
+                            <th>Call IV</th>
+                            <th>Strike</th>
+                            <th>Put IV</th>
+                            <th>Put LTP</th>
+                            <th>Put OI</th>
+                          </tr>
+                        </thead>
+                        <tbody></tbody>
+                      </table>
                     </div>
                   </div>
                 </div>
