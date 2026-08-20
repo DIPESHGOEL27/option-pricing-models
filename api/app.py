@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify, render_template
+from flask.json.provider import DefaultJSONProvider
 import numpy as np
 import scipy.stats as si
 from scipy import stats
@@ -53,33 +54,26 @@ except ImportError:
     except ImportError:
         MARKET_DATA_AVAILABLE = False
 
-# Try to import ML modules, prioritize the fix module
+# Try to import ML modules
 try:
-    # Try the fix module first (this has direct implementations that don't rely on imports)
-    from .ml_pricing_fix import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
-    print("Successfully imported ML modules from ml_pricing_fix")
+    from .ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
+    print("Successfully imported ML modules from .ml_pricing")
     ML_FEATURES_AVAILABLE = True
 except ImportError:
     try:
-        # Then try the direct import
-        from .ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
-        print("Successfully imported ML modules from .ml_pricing")
+        # Try with the api prefix
+        from api.ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
+        print("Successfully imported ML modules from api.ml_pricing")
         ML_FEATURES_AVAILABLE = True
     except ImportError:
         try:
-            # Try with the api prefix
-            from api.ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
-            print("Successfully imported ML modules from api.ml_pricing")
+            # Try without any prefix
+            from ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
+            print("Successfully imported ML modules from ml_pricing")
             ML_FEATURES_AVAILABLE = True
         except ImportError:
-            try:
-                # Try without any prefix
-                from ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
-                print("Successfully imported ML modules from ml_pricing")
-                ML_FEATURES_AVAILABLE = True
-            except ImportError:
-                print("Failed to import ML modules from any location")
-                ML_FEATURES_AVAILABLE = False
+            print("Failed to import ML modules from any location")
+            ML_FEATURES_AVAILABLE = False
 
 try:
     from model_validation import ModelValidator, BacktestResults
@@ -108,6 +102,52 @@ if current_dir not in sys.path:
     sys.path.append(current_dir)
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
+
+
+class NumpyJSONProvider(DefaultJSONProvider):
+    """Extends Flask's JSON provider to serialize numpy/pandas scalar types.
+
+    Routes across this app build response dicts directly from pandas/yfinance
+    data (e.g. hist['Volume'].iloc[-1] is a numpy.int64), which the stdlib
+    json module cannot serialize on its own — every route doing this would
+    otherwise fail with "Object of type int64/float64 is not JSON
+    serializable" on every request.
+    """
+
+    @staticmethod
+    def default(obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.bool_):
+            return bool(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, pd.Timestamp):
+            return obj.isoformat()
+        return DefaultJSONProvider.default(obj)
+
+
+app.json = NumpyJSONProvider(app)
+
+_ensemble_pricer_cache = {}
+
+
+def get_cached_ensemble_pricer():
+    """Return a lazily-trained, process-wide EnsembleOptionPricer.
+
+    Interactive pricing endpoints need a fast response; retraining all three
+    ensemble models from scratch on every request (as this used to do) adds
+    several seconds of latency to every click for no benefit, since nothing
+    about the training data depends on the request.
+    """
+    if 'pricer' not in _ensemble_pricer_cache:
+        training_data = create_sample_data(5000)
+        pricer = EnsembleOptionPricer()
+        pricer.train(training_data)
+        _ensemble_pricer_cache['pricer'] = pricer
+    return _ensemble_pricer_cache['pricer']
 
 
 @app.route('/')
@@ -342,13 +382,14 @@ def calculate_risk_metrics():
         
         # Simple portfolio risk calculation without OptionPortfolio class
         total_value = 0
+        total_pnl = 0
         total_delta = 0
         total_gamma = 0
         total_theta = 0
         total_vega = 0
-        
+
         position_details = []
-        
+
         for pos in positions:
             S = float(pos['underlying_price'])
             K = float(pos['strike'])
@@ -357,37 +398,44 @@ def calculate_risk_metrics():
             sigma = float(pos['volatility'])
             option_type = pos['option_type']
             quantity = int(pos['quantity'])
-            
+            premium_paid = float(pos.get('premium_paid', 0))
+
             # Calculate Black-Scholes price and Greeks
             price, delta, gamma, theta, vega, rho = black_scholes(S, K, T, r, sigma, option_type)
-            
+
             position_value = price * quantity * 100  # 100 shares per contract
+            position_pnl = position_value - premium_paid * quantity * 100
             total_value += position_value
+            total_pnl += position_pnl
             total_delta += delta * quantity * 100
             total_gamma += gamma * quantity * 100
             total_theta += theta * quantity * 100
             total_vega += vega * quantity * 100
-            
+
             position_details.append({
                 'symbol': pos['symbol'],
                 'option_type': option_type,
                 'strike': K,
                 'quantity': quantity,
                 'market_value': float(position_value),
+                'pnl': float(position_pnl),
                 'delta': float(delta * quantity * 100),
                 'gamma': float(gamma * quantity * 100),
                 'theta': float(theta * quantity * 100),
                 'vega': float(vega * quantity * 100)
             })
-        
+
         # Portfolio summary
         summary = {
             'total_positions': len(positions),
-            'total_market_value': float(total_value),
-            'net_delta': float(total_delta),
-            'net_gamma': float(total_gamma),
-            'net_theta': float(total_theta),
-            'net_vega': float(total_vega),
+            'portfolio_value': float(total_value),
+            'total_pnl': float(total_pnl),
+            'portfolio_greeks': {
+                'delta': float(total_delta),
+                'gamma': float(total_gamma),
+                'theta': float(total_theta),
+                'vega': float(total_vega)
+            },
             'position_details': position_details
         }
         
@@ -436,9 +484,18 @@ def perform_stress_test():
         
         # Custom scenarios or use defaults
         scenarios = data.get('scenarios', None)
-        
+
         stress_results = RiskMetrics.stress_test(S, K, T, r, sigma, option_type, scenarios)
-        
+
+        # A single named scenario (one of the dedicated stress-test buttons)
+        # narrows the response to just that scenario instead of all of them.
+        scenario = data.get('scenario')
+        if scenario and scenario in stress_results:
+            stress_results = {
+                'base_price': stress_results['base_price'],
+                scenario: stress_results[scenario]
+            }
+
         return jsonify(stress_results)
         
     except Exception as e:
@@ -607,36 +664,36 @@ def calculate_ensemble_price():
         data = request.json
         if not data:
             return jsonify({'error': 'No data provided'})
-            
+
         S = float(data['S'])
         K = float(data['K'])
         T = float(data['T'])
         r = float(data['r'])
         sigma = float(data['sigma'])
         option_type = data['optionType']
-        
+
         try:
-            ensemble_pricer = EnsembleOptionPricer()
-            
-            # Create a sample dataset for training
-            sample_data = create_sample_data(1000)
-            
-            # Train the ensemble model
-            ensemble_pricer.train(sample_data)
+            ensemble_pricer = get_cached_ensemble_pricer()
         except Exception as e:
             return jsonify({'error': f"ML Pricing Error: {str(e)}"})
-            
-        
-        # Create prediction data
+
+        # Build the prediction row with the exact column names/types the
+        # models were trained on (S/K/T/r/sigma, option_type as 'call'/'put'
+        # string, and a matching intrinsic_value) -- using different names
+        # here silently produces an all-zero/garbage feature vector at
+        # predict time (see NeuralNetworkPricer.prepare_features and
+        # EnsembleOptionPricer._prepare_tree_features in ml_pricing.py).
+        intrinsic_value = max(S - K, 0) if option_type == 'call' else max(K - S, 0)
         prediction_data = pd.DataFrame({
-            'spot_price': [S],
-            'strike_price': [K],
-            'time_to_expiry': [T],
-            'risk_free_rate': [r],
-            'volatility': [sigma],
-            'option_type': [1 if option_type == 'call' else 0]
+            'S': [S],
+            'K': [K],
+            'T': [T],
+            'r': [r],
+            'sigma': [sigma],
+            'option_type': [option_type],
+            'intrinsic_value': [intrinsic_value]
         })
-        
+
         # Get ensemble prediction
         ml_prices = ensemble_pricer.predict(prediction_data)
         ml_price = ml_prices[0]
@@ -1163,6 +1220,81 @@ def plot_payoff_diagram():
     except Exception as e:
         return jsonify({'error': str(e)})
 
+@app.route('/api/volatility_smile', methods=['POST'])
+def plot_volatility_smile():
+    """Generate an implied volatility smile chart from the live option chain."""
+    try:
+        data = request.json
+        if not data or not data.get('symbol'):
+            return jsonify({'error': 'No symbol provided'})
+
+        if not BASIC_MARKET_DATA_AVAILABLE:
+            return jsonify({'error': 'Market data features are not available'})
+
+        symbol = data['symbol'].upper()
+        market_data = MarketDataProvider()
+        option_chain = market_data.get_option_chain(symbol)
+
+        if 'error' in option_chain:
+            return jsonify(option_chain)
+
+        calls = option_chain['calls']
+        puts = option_chain['puts']
+        calls_iv = calls[calls['impliedVolatility'] > 0]
+        puts_iv = puts[puts['impliedVolatility'] > 0]
+
+        if calls_iv.empty and puts_iv.empty:
+            return jsonify({'error': f'No implied volatility data available for {symbol}'})
+
+        traces = []
+        if not calls_iv.empty:
+            traces.append(go.Scatter(
+                x=calls_iv['strike'].tolist(),
+                y=(calls_iv['impliedVolatility'] * 100).tolist(),
+                mode='markers+lines',
+                name='Calls',
+                marker=dict(size=6)
+            ))
+        if not puts_iv.empty:
+            traces.append(go.Scatter(
+                x=puts_iv['strike'].tolist(),
+                y=(puts_iv['impliedVolatility'] * 100).tolist(),
+                mode='markers+lines',
+                name='Puts',
+                marker=dict(size=6)
+            ))
+
+        max_iv_pct = max(
+            calls_iv['impliedVolatility'].max() if not calls_iv.empty else 0,
+            puts_iv['impliedVolatility'].max() if not puts_iv.empty else 0
+        ) * 100
+        traces.append(go.Scatter(
+            x=[option_chain['underlying_price']] * 2,
+            y=[0, max_iv_pct],
+            mode='lines',
+            name='Spot Price',
+            line=dict(width=1, color='gray', dash='dot')
+        ))
+
+        layout = go.Layout(
+            title=f"{symbol} Implied Volatility Smile ({option_chain['expiry']})",
+            xaxis=dict(title='Strike Price'),
+            yaxis=dict(title='Implied Volatility (%)'),
+            template='plotly_dark',
+            hovermode='x unified',
+            showlegend=True
+        )
+
+        return jsonify({
+            'symbol': symbol,
+            'expiry': option_chain['expiry'],
+            'underlying_price': option_chain['underlying_price'],
+            'plot': json.dumps({'data': traces, 'layout': layout}, cls=PlotlyJSONEncoder)
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
 def _calculate_break_even_points(spot_range, payoff):
     """Calculate break-even points where payoff crosses zero"""
     break_even_points = []
@@ -1341,8 +1473,7 @@ def get_performance_metrics():
             },
             'throughput_analysis': {
                 'meets_5k_daily_target': options_per_day >= 5000,
-                'performance_factor': options_per_day / 5000,
-                'analysis_time_reduction': 65  # 65% reduction claim
+                'performance_factor': options_per_day / 5000
             }
         }
         
@@ -1353,16 +1484,8 @@ def get_performance_metrics():
 
 @app.route('/api/ml/benchmark', methods=['POST'])
 def ml_model_benchmark():
-    """Benchmark ML models with 50,000+ records achieving R² = 0.94"""
+    """Benchmark ML models on 50,000+ synthetic records and report real validation R²."""
     try:
-        # Try using the fix module first
-        try:
-            from ml_pricing_fix import NeuralNetworkPricer, EnsembleOptionPricer, create_sample_data
-            print("Using ml_pricing_fix in benchmark function")
-        except ImportError:
-            from ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, create_sample_data
-            print("Using ml_pricing in benchmark function")
-        
         # Generate large training dataset
         print("Generating 50,000+ training records...")
         training_data = create_sample_data(50000)
@@ -1381,29 +1504,27 @@ def ml_model_benchmark():
         
         # Train Ensemble Model
         try:
-            ensemble_pricer = EnsembleOptionPricer(['neural_network', 'gradient_boosting', 'random_forest'])
+            ensemble_pricer = EnsembleOptionPricer(['neural_network', 'xgboost', 'random_forest'])
             ensemble_metrics = ensemble_pricer.train(training_data)
         except Exception as e:
             print(f"Error initializing ensemble pricer: {str(e)}")
             # Provide default metrics if ensemble fails
-            ensemble_metrics = {'neural_network': {'val_r2': 0}, 'gradient_boosting': {'val_r2': 0}, 'random_forest': {'val_r2': 0}}
-        
+            ensemble_metrics = {'neural_network': {'val_r2': 0}, 'xgboost': {'val_r2': 0}, 'random_forest': {'val_r2': 0}}
+
         # Calculate performance metrics
-        best_r2 = max(nn_metrics.get('val_r2', 0), 
+        best_r2 = max(nn_metrics.get('val_r2', 0),
                      max(model_metrics.get('val_r2', 0) for model_metrics in ensemble_metrics.values()))
-        
+
         benchmark_results = {
             'dataset_size': len(training_data),
             'neural_network_metrics': nn_metrics,
             'ensemble_metrics': ensemble_metrics,
             'best_validation_r2': best_r2,
-            'meets_r2_target': best_r2 >= 0.94,
             'training_features': len(training_data.columns) - 1,
             'performance_summary': {
                 'achieved_r2': best_r2,
-                'target_r2': 0.94,
                 'training_records': len(training_data),
-                'model_complexity': 'Deep Neural Network + Ensemble Methods'
+                'model_complexity': 'Neural Network + Random Forest + XGBoost Ensemble'
             }
         }
         

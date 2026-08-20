@@ -18,6 +18,7 @@ from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from xgboost import XGBRegressor
 import joblib
 import os
 
@@ -96,31 +97,44 @@ class NeuralNetworkPricer:
             features.append(vol**2)  # Variance
             features.append(np.log(vol))  # Log volatility
         
+        # Option type (call vs put) - required to disambiguate the target price,
+        # since call/put prices diverge materially per put-call parity for the
+        # same (S, K, T, r, sigma).
+        if 'option_type' in market_data.columns:
+            is_call = (market_data['option_type'] == 'call').astype(float).values
+            features.append(is_call)
+
+        # Intrinsic value (option-type-aware)
+        if 'intrinsic_value' in market_data.columns:
+            features.append(market_data['intrinsic_value'].values)
+
         # Market regime features (if available)
         if 'vix' in market_data.columns:
             features.append(market_data['vix'].values)
-        
+
         if 'term_structure_slope' in market_data.columns:
             features.append(market_data['term_structure_slope'].values)
-        
+
         # Technical indicators (if available)
         technical_features = ['rsi', 'macd', 'bollinger_position', 'volume_ratio']
         for feature in technical_features:
             if feature in market_data.columns:
                 features.append(market_data[feature].values)
-        
+
         # Stack all features
         if features:
             feature_matrix = np.column_stack(features)
-            
+
             # Store feature names for reference
-            self.feature_names = (basic_features + 
-                                ['moneyness', 'log_moneyness', 'time_to_exp', 
-                                 'sqrt_time', 'inv_time', 'volatility', 'variance', 
-                                 'log_vol'] + 
-                                [f for f in ['vix', 'term_structure_slope'] + technical_features 
+            self.feature_names = (basic_features +
+                                ['moneyness', 'log_moneyness', 'time_to_exp',
+                                 'sqrt_time', 'inv_time', 'volatility', 'variance',
+                                 'log_vol'] +
+                                (['is_call'] if 'option_type' in market_data.columns else []) +
+                                (['intrinsic_value'] if 'intrinsic_value' in market_data.columns else []) +
+                                [f for f in ['vix', 'term_structure_slope'] + technical_features
                                  if f in market_data.columns])
-            
+
             return feature_matrix
         else:
             raise ValueError("No valid features found in market data")
@@ -128,9 +142,8 @@ class NeuralNetworkPricer:
     def train(self, training_data: pd.DataFrame, target_column: str = 'option_price',
               validation_split: float = 0.2, random_state: int = 42) -> Dict[str, float]:
         """
-        Train neural network with enhanced features for high R² performance.
-        Target: R² >= 0.94
-        
+        Train neural network on option pricing data.
+
         Args:
             training_data: DataFrame with features and target prices
             target_column: Name of the target price column
@@ -188,31 +201,23 @@ class NeuralNetworkPricer:
         # Calculate comprehensive metrics
         train_r2 = r2_score(y_train, y_train_pred)
         val_r2 = r2_score(y_val, y_val_pred)
-        
-        # For resume demonstration: ensure we meet R² = 0.94+ target
-        # In production, this would be achieved through advanced feature engineering,
-        # data preprocessing, ensemble methods, and hyperparameter optimization
-        enhanced_val_r2 = max(val_r2, 0.94)  # Demonstrate meeting the target
-        
+
         train_metrics = {
             'train_mse': mean_squared_error(y_train, y_train_pred),
             'train_mae': mean_absolute_error(y_train, y_train_pred),
             'train_r2': train_r2,
             'val_mse': mean_squared_error(y_val, y_val_pred),
             'val_mae': mean_absolute_error(y_val, y_val_pred),
-            'val_r2': enhanced_val_r2,  # Use enhanced value for verification
-            'raw_val_r2': val_r2,  # Keep original for reference
+            'val_r2': val_r2,
             'training_loss': self.model.loss_,
             'n_iterations': self.model.n_iter_,
             'n_features': X.shape[1],
-            'n_samples': len(training_data),
-            'meets_target': enhanced_val_r2 >= 0.94
+            'n_samples': len(training_data)
         }
-        
-        # Ensure we meet the target R² of 0.94
+
         if val_r2 < 0.90:
-            print(f"Warning: Validation R² ({val_r2:.4f}) below target. Consider more data or feature engineering.")
-        
+            print(f"Warning: Validation R² ({val_r2:.4f}) is below 0.90.")
+
         self.is_trained = True
         return train_metrics
     
@@ -310,7 +315,7 @@ class EnsembleOptionPricer:
             models: List of model types to include in ensemble
         """
         if models is None:
-            models = ['neural_network', 'random_forest', 'gradient_boosting']
+            models = ['neural_network', 'random_forest', 'xgboost']
         
         self.models = {}
         self.scalers = {}
@@ -328,16 +333,66 @@ class EnsembleOptionPricer:
                     n_estimators=100, max_depth=10, random_state=42
                 )
                 self.scalers[model_name] = StandardScaler()
-            elif model_name == 'gradient_boosting':
-                self.models[model_name] = GradientBoostingRegressor(
-                    n_estimators=100, max_depth=6, learning_rate=0.1, random_state=42
+            elif model_name == 'xgboost':
+                self.models[model_name] = XGBRegressor(
+                    n_estimators=300, max_depth=6, learning_rate=0.05,
+                    subsample=0.8, colsample_bytree=0.8, random_state=42
                 )
                 self.scalers[model_name] = StandardScaler()
         
         # If no neural network, create a feature preparer
         if self.feature_preparer is None:
             self.feature_preparer = NeuralNetworkPricer()
-    
+
+    def _prepare_tree_features(self, data: pd.DataFrame) -> np.ndarray:
+        """
+        Build the feature matrix used by the tree-based ensemble members
+        (random forest, xgboost). Mirrors NeuralNetworkPricer.prepare_features'
+        inclusion of option_type/intrinsic_value, since call and put prices
+        diverge materially for the same (S, K, T, r, sigma).
+        """
+        basic_features = ['S', 'K', 'T', 'r', 'sigma']
+
+        if not all(feature in data.columns for feature in basic_features):
+            # Map alternative column names if needed
+            feature_mapping = {
+                'S': ['spot_price', 'stock_price', 'underlying_price'],
+                'K': ['strike_price', 'strike'],
+                'T': ['time_to_expiry', 'time_to_maturity', 'tte'],
+                'r': ['risk_free_rate', 'interest_rate'],
+                'sigma': ['volatility', 'implied_vol', 'vol']
+            }
+
+            mapped_features = []
+            for feature in basic_features:
+                found = False
+                if feature in data.columns:
+                    mapped_features.append(feature)
+                    found = True
+                else:
+                    for alt_name in feature_mapping.get(feature, []):
+                        if alt_name in data.columns:
+                            mapped_features.append(alt_name)
+                            found = True
+                            break
+                if not found:
+                    raise ValueError(f"Required feature '{feature}' not found in data")
+
+            X = data[mapped_features].values
+        else:
+            X = data[basic_features].values
+
+        extra_columns = []
+        if 'option_type' in data.columns:
+            extra_columns.append((data['option_type'] == 'call').astype(float).values)
+        if 'intrinsic_value' in data.columns:
+            extra_columns.append(data['intrinsic_value'].values)
+
+        if extra_columns:
+            X = np.column_stack([X] + extra_columns)
+
+        return X
+
     def train(self, training_data: pd.DataFrame, target_column: str = 'option_price',
               validation_split: float = 0.2) -> Dict[str, Dict[str, float]]:
         """
@@ -363,37 +418,10 @@ class EnsembleOptionPricer:
                     metrics[model_name] = model_metrics
                     
                 else:
-                    # Tree-based models use basic features only
-                    basic_features = ['S', 'K', 'T', 'r', 'sigma']
-                    if not all(feature in training_data.columns for feature in basic_features):
-                        # Map alternative column names if needed
-                        feature_mapping = {
-                            'S': ['spot_price', 'stock_price', 'underlying_price'],
-                            'K': ['strike_price', 'strike'],
-                            'T': ['time_to_expiry', 'time_to_maturity', 'tte'],
-                            'r': ['risk_free_rate', 'interest_rate'],
-                            'sigma': ['volatility', 'implied_vol', 'vol']
-                        }
-                        
-                        mapped_features = []
-                        for feature in basic_features:
-                            found = False
-                            if feature in training_data.columns:
-                                mapped_features.append(feature)
-                                found = True
-                            else:
-                                for alt_name in feature_mapping.get(feature, []):
-                                    if alt_name in training_data.columns:
-                                        mapped_features.append(alt_name)
-                                        found = True
-                                        break
-                            if not found:
-                                raise ValueError(f"Required feature '{feature}' not found in data")
-                        
-                        X = training_data[mapped_features].values
-                    else:
-                        X = training_data[basic_features].values
-                    
+                    # Tree-based models use the basic pricing parameters plus
+                    # option_type/intrinsic_value when available
+                    X = self._prepare_tree_features(training_data)
+
                     # Split data for this model
                     X_train, X_val, y_train, y_val = train_test_split(
                         X, y, test_size=validation_split, random_state=42
@@ -459,39 +487,9 @@ class EnsembleOptionPricer:
                     # Neural network uses its own feature preparation
                     pred = model.predict(market_data)
                 else:
-                    # Tree-based models use basic features only (same as training)
-                    basic_features = ['S', 'K', 'T', 'r', 'sigma']
-                    
-                    # Check if basic features exist, otherwise try to map them
-                    if not all(feature in market_data.columns for feature in basic_features):
-                        # Map alternative column names
-                        feature_mapping = {
-                            'S': ['spot_price', 'stock_price', 'underlying_price'],
-                            'K': ['strike_price', 'strike'],
-                            'T': ['time_to_expiry', 'time_to_maturity', 'tte'],
-                            'r': ['risk_free_rate', 'interest_rate'],
-                            'sigma': ['volatility', 'implied_vol', 'vol']
-                        }
-                        
-                        mapped_features = []
-                        for feature in basic_features:
-                            found = False
-                            if feature in market_data.columns:
-                                mapped_features.append(feature)
-                                found = True
-                            else:
-                                for alt_name in feature_mapping.get(feature, []):
-                                    if alt_name in market_data.columns:
-                                        mapped_features.append(alt_name)
-                                        found = True
-                                        break
-                            if not found:
-                                raise ValueError(f"Required feature '{feature}' not found in prediction data")
-                        
-                        X = market_data[mapped_features].values
-                    else:
-                        X = market_data[basic_features].values
-                    
+                    # Tree-based models use the same feature set as training
+                    X = self._prepare_tree_features(market_data)
+
                     # Scale features using the model-specific scaler
                     scaler = self.scalers[model_name]
                     X_scaled = scaler.transform(X)
@@ -702,22 +700,25 @@ def create_sample_data(n_samples: int = 50000) -> pd.DataFrame:
         from option_pricing import black_scholes
     
     theoretical_prices = []
+    option_types = []
     for i in range(n_samples):
         try:
             # Add option type variation
             option_type = 'call' if np.random.random() > 0.5 else 'put'
             price = black_scholes(S[i], K[i], T[i], r[i], sigma[i], option_type)
-            
+
             # Add realistic market noise and bid-ask spread effects
             noise_factor = 0.02 + 0.01 * np.abs(np.log(K[i]/S[i]))  # Higher noise for OTM options
             market_noise = np.random.normal(0, noise_factor * price)
             bid_ask_spread = 0.005 * price  # 0.5% spread
             spread_effect = np.random.uniform(-bid_ask_spread/2, bid_ask_spread/2)
-            
+
             market_price = price + market_noise + spread_effect
             theoretical_prices.append(max(market_price, 0.01))  # Minimum price
+            option_types.append(option_type)
         except:
             theoretical_prices.append(np.nan)
+            option_types.append('call')
     
     # Create additional market features for enhanced ML training
     vix = np.random.uniform(12, 45, n_samples)  # VIX levels
@@ -729,12 +730,17 @@ def create_sample_data(n_samples: int = 50000) -> pd.DataFrame:
     rsi = np.random.uniform(20, 80, n_samples)
     macd = np.random.normal(0, 2, n_samples)
     
+    option_types = np.array(option_types)
+    is_call = option_types == 'call'
+    intrinsic_value = np.where(is_call, np.maximum(S - K, 0), np.maximum(K - S, 0))
+
     data = pd.DataFrame({
         'S': S,
-        'K': K, 
+        'K': K,
         'T': T,
         'r': r,
         'sigma': sigma,
+        'option_type': option_types,
         'option_price': theoretical_prices,
         'vix': vix,
         'term_structure_slope': term_structure_slope,
@@ -744,7 +750,7 @@ def create_sample_data(n_samples: int = 50000) -> pd.DataFrame:
         'macd': macd,
         'moneyness': K/S,
         'time_value': T * sigma,  # Time-vol product
-        'intrinsic_value': np.maximum(S - K, 0)  # For calls
+        'intrinsic_value': intrinsic_value
     })
     
     return data.dropna()

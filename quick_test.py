@@ -28,7 +28,7 @@ def test_basic_functionality(base_url="http://127.0.0.1:8000"):
         if response.status_code == 200:
             data = response.json()
             print("   ✅ API status accessible")
-            print(f"   📊 Features available: {len(data.get('features_available', {}))}")
+            print(f"   📊 Features available: {len(data.get('features', {}))}")
         else:
             print(f"   ❌ API status failed: {response.status_code}")
             return False
@@ -75,7 +75,7 @@ def test_basic_functionality(base_url="http://127.0.0.1:8000"):
         
     except requests.exceptions.ConnectionError:
         print(f"   ❌ Cannot connect to {base_url}")
-        print("   💡 Make sure the Flask app is running: python api/app.py")
+        print("   💡 Make sure the Flask app is running: python main.py")
         return False
     except Exception as e:
         print(f"   ❌ Error: {e}")
@@ -83,10 +83,7 @@ def test_basic_functionality(base_url="http://127.0.0.1:8000"):
 
 if __name__ == "__main__":
     success = test_basic_functionality()
-    if success:
-        print("\n✅ Ready for full verification!")
-        print("Run: python verify_resume_features.py")
-    else:
-        print("\n❌ Basic tests failed. Fix issues before running full verification.")
+    if not success:
+        print("\n❌ Basic tests failed.")
     
     sys.exit(0 if success else 1)

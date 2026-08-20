@@ -16,7 +16,7 @@
       href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"
       rel="stylesheet"
     />
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='styles.css') }}"
@@ -35,6 +35,9 @@
           type="button"
           data-bs-toggle="collapse"
           data-bs-target="#navbarNav"
+          aria-controls="navbarNav"
+          aria-expanded="false"
+          aria-label="Toggle navigation"
         >
           <span class="navbar-toggler-icon"></span>
         </button>
@@ -128,6 +131,9 @@
                   id="basic-tab"
                   data-bs-toggle="pill"
                   data-bs-target="#basic-panel"
+                  role="tab"
+                  aria-selected="true"
+                  aria-controls="basic-panel"
                 >
                   <i class="fas fa-calculator me-2"></i>Basic Models
                 </button>
@@ -136,6 +142,9 @@
                   id="advanced-tab"
                   data-bs-toggle="pill"
                   data-bs-target="#advanced-panel"
+                  role="tab"
+                  aria-selected="false"
+                  aria-controls="advanced-panel"
                 >
                   <i class="fas fa-rocket me-2"></i>Advanced Models
                 </button>
@@ -145,6 +154,9 @@
                   id="risk-tab"
                   data-bs-toggle="pill"
                   data-bs-target="#risk-panel"
+                  role="tab"
+                  aria-selected="false"
+                  aria-controls="risk-panel"
                 >
                   <i class="fas fa-shield-alt me-2"></i>Risk Management
                 </button>
@@ -153,6 +165,9 @@
                   id="analysis-tab"
                   data-bs-toggle="pill"
                   data-bs-target="#analysis-panel"
+                  role="tab"
+                  aria-selected="false"
+                  aria-controls="analysis-panel"
                 >
                   <i class="fas fa-chart-area me-2"></i>Analysis
                 </button>
@@ -175,7 +190,11 @@
                   id="symbolInput"
                   placeholder="Symbol (e.g., AAPL)"
                 />
-                <button class="btn btn-primary" id="getDataBtn">
+                <button
+                  class="btn btn-primary"
+                  id="getDataBtn"
+                  aria-label="Look up symbol"
+                >
                   <i class="fas fa-search"></i>
                 </button>
               </div>
@@ -192,7 +211,12 @@
         <div class="col-lg-9">
           <div class="tab-content" id="v-pills-tabContent">
             <!-- Basic Models Panel -->
-            <div class="tab-pane fade show active" id="basic-panel">
+            <div
+              class="tab-pane fade show active"
+              id="basic-panel"
+              role="tabpanel"
+              aria-labelledby="basic-tab"
+            >
               <div class="card bg-dark">
                 <div class="card-header">
                   <h5 class="mb-0">Black-Scholes & Binomial Models</h5>
@@ -316,7 +340,12 @@
             </div>
 
             <!-- Advanced Models Panel -->
-            <div class="tab-pane fade" id="advanced-panel">
+            <div
+              class="tab-pane fade"
+              id="advanced-panel"
+              role="tabpanel"
+              aria-labelledby="advanced-tab"
+            >
               <div class="row">
                 <!-- Machine Learning Section -->
                 <div class="col-md-6 mb-4">
@@ -548,7 +577,7 @@
                         <div class="row text-center mt-3">
                           <div class="col-6">
                             <h6 class="text-muted">Put/Call Ratio</h6>
-                            <h4 id="putCallRatio" class="text-info">--</h4>
+                            <h4 id="sentimentPutCallRatio" class="text-info">--</h4>
                           </div>
                           <div class="col-6">
                             <h6 class="text-muted">Overall Sentiment</h6>
@@ -565,7 +594,12 @@
             </div>
 
             <!-- Risk Management Panel -->
-            <div class="tab-pane fade" id="risk-panel">
+            <div
+              class="tab-pane fade"
+              id="risk-panel"
+              role="tabpanel"
+              aria-labelledby="risk-tab"
+            >
               <div class="card bg-dark">
                 <div class="card-header">
                   <h5 class="mb-0">Risk Management & Stress Testing</h5>
@@ -624,7 +658,12 @@
             </div>
 
             <!-- Analysis Panel -->
-            <div class="tab-pane fade" id="analysis-panel">
+            <div
+              class="tab-pane fade"
+              id="analysis-panel"
+              role="tabpanel"
+              aria-labelledby="analysis-tab"
+            >
               <div class="card bg-dark">
                 <div class="card-header">
                   <h5 class="mb-0">Advanced Analytics & Visualization</h5>
@@ -632,6 +671,72 @@
                 <div class="card-body">
                   <div class="row mb-3">
                     <div class="col-md-12">
+                      <div class="card bg-secondary bg-opacity-10 border-secondary mb-3">
+                        <div
+                          class="card-header d-flex justify-content-between align-items-center"
+                        >
+                          <h6 class="mb-0">Portfolio Positions</h6>
+                          <button
+                            class="btn btn-sm btn-primary"
+                            id="addPositionBtn"
+                          >
+                            <i class="fas fa-plus me-1"></i>Add Position
+                          </button>
+                        </div>
+                        <div class="card-body">
+                          <div class="table-responsive">
+                            <table
+                              class="table table-dark table-sm mb-3"
+                              id="portfolioTable"
+                            >
+                              <thead>
+                                <tr>
+                                  <th>Symbol</th>
+                                  <th>Type</th>
+                                  <th>Strike</th>
+                                  <th>Qty</th>
+                                  <th>Value</th>
+                                  <th>P&amp;L</th>
+                                  <th></th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <tr>
+                                  <td colspan="7" class="text-center text-muted">
+                                    No positions in portfolio
+                                  </td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+                          <div class="row text-center">
+                            <div class="col-6 col-md-2">
+                              <small class="text-muted d-block">Total Value</small>
+                              <strong id="totalValue">$0.00</strong>
+                            </div>
+                            <div class="col-6 col-md-2">
+                              <small class="text-muted d-block">Total P&amp;L</small>
+                              <strong id="totalPnL">$0.00</strong>
+                            </div>
+                            <div class="col-6 col-md-2">
+                              <small class="text-muted d-block">Delta</small>
+                              <strong id="portfolioDelta">0.00</strong>
+                            </div>
+                            <div class="col-6 col-md-2">
+                              <small class="text-muted d-block">Gamma</small>
+                              <strong id="portfolioGamma">0.00</strong>
+                            </div>
+                            <div class="col-6 col-md-2">
+                              <small class="text-muted d-block">Theta</small>
+                              <strong id="portfolioTheta">$0.00</strong>
+                            </div>
+                            <div class="col-6 col-md-2">
+                              <small class="text-muted d-block">Vega</small>
+                              <strong id="portfolioVega">0.00</strong>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                       <div class="btn-group w-100">
                         <button
                           class="btn btn-outline-primary"
@@ -689,6 +794,136 @@
     <!-- Enhanced Loading Overlay -->
     <div id="loadingOverlay" class="loading-overlay">
       <div class="loading-spinner"></div>
+    </div>
+
+    <!-- Add Position Modal -->
+    <div
+      class="modal fade"
+      id="addPositionModal"
+      tabindex="-1"
+      aria-labelledby="addPositionModalLabel"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog">
+        <div class="modal-content bg-dark text-light">
+          <div class="modal-header">
+            <h5 class="modal-title" id="addPositionModalLabel">
+              Add Portfolio Position
+            </h5>
+            <button
+              type="button"
+              class="btn-close btn-close-white"
+              data-bs-dismiss="modal"
+              aria-label="Close"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <form id="addPositionForm">
+              <div class="row g-3">
+                <div class="col-6">
+                  <label class="form-label" for="posSymbol">Symbol</label>
+                  <input
+                    type="text"
+                    class="form-control"
+                    id="posSymbol"
+                    placeholder="AAPL"
+                    required
+                  />
+                </div>
+                <div class="col-6">
+                  <label class="form-label" for="posOptionType"
+                    >Option Type</label
+                  >
+                  <select class="form-select" id="posOptionType">
+                    <option value="call">Call</option>
+                    <option value="put">Put</option>
+                  </select>
+                </div>
+                <div class="col-6">
+                  <label class="form-label" for="posStrike">Strike Price</label>
+                  <input
+                    type="number"
+                    class="form-control"
+                    id="posStrike"
+                    step="0.01"
+                    required
+                  />
+                </div>
+                <div class="col-6">
+                  <label class="form-label" for="posQuantity"
+                    >Quantity (contracts)</label
+                  >
+                  <input
+                    type="number"
+                    class="form-control"
+                    id="posQuantity"
+                    value="1"
+                    required
+                  />
+                </div>
+                <div class="col-6">
+                  <label class="form-label" for="posPremium"
+                    >Premium Paid</label
+                  >
+                  <input
+                    type="number"
+                    class="form-control"
+                    id="posPremium"
+                    step="0.01"
+                    required
+                  />
+                </div>
+                <div class="col-6">
+                  <label class="form-label" for="posExpiry">Expiry Date</label>
+                  <input
+                    type="date"
+                    class="form-control"
+                    id="posExpiry"
+                    required
+                  />
+                </div>
+                <div class="col-6">
+                  <label class="form-label" for="posUnderlying"
+                    >Underlying Price</label
+                  >
+                  <input
+                    type="number"
+                    class="form-control"
+                    id="posUnderlying"
+                    step="0.01"
+                    required
+                  />
+                </div>
+                <div class="col-6">
+                  <label class="form-label" for="posVolatility"
+                    >Volatility</label
+                  >
+                  <input
+                    type="number"
+                    class="form-control"
+                    id="posVolatility"
+                    step="0.01"
+                    value="0.20"
+                    required
+                  />
+                </div>
+              </div>
+            </form>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              Cancel
+            </button>
+            <button type="button" class="btn btn-primary" id="savePositionBtn">
+              Add Position
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Floating Action Button for Quick Actions -->

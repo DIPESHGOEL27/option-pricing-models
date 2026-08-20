@@ -27,7 +27,8 @@ def create_requirements(mode="full"):
     
     heavy_deps = [
         "scikit-learn>=1.1.0,<2.0.0",
-        "seaborn>=0.12.0,<1.0.0", 
+        "xgboost>=2.0.0,<4.0.0",
+        "seaborn>=0.12.0,<1.0.0",
         "statsmodels>=0.13.0,<1.0.0",
         "joblib>=1.2.0,<2.0.0",
         "aiohttp>=3.8.0,<4.0.0",

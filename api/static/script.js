@@ -76,9 +76,6 @@ class OptionPricingPlatform {
   }
 
   setupEventListeners() {
-    // Model type changes
-    $("#modelType").on("change", this.onModelTypeChange.bind(this));
-
     // Calculation buttons with model state management
     $("#blackScholesBtn").on("click", () => {
       this.setActiveModelButton("blackScholesBtn");
@@ -88,7 +85,6 @@ class OptionPricingPlatform {
       this.setActiveModelButton("binomialBtn");
       this.calculateBasic("binomial");
     });
-    $("#calculateAdvanced").on("click", this.calculateAdvanced.bind(this));
 
     // Market data
     $("#getDataBtn").on("click", this.getMarketData.bind(this));
@@ -97,15 +93,18 @@ class OptionPricingPlatform {
     });
 
     // Portfolio management
-    $("#addPositionBtn").on("click", () =>
-      $("#addPositionModal").modal("show")
-    );
+    $("#addPositionBtn").on("click", () => this.showAddPositionModal());
     $("#savePositionBtn").on("click", this.addPosition.bind(this));
+    $("#portfolioTable").on("click", ".remove-position-btn", (e) => {
+      const id = parseFloat($(e.currentTarget).data("position-id"));
+      this.removePosition(id);
+    });
 
     // Risk management
     $("#marketCrashBtn").on("click", () => this.runStressTest("market_crash"));
     $("#volSpikeBtn").on("click", () => this.runStressTest("vol_spike"));
     $("#rateShockBtn").on("click", () => this.runStressTest("rate_shock"));
+    $("#customStressBtn").on("click", () => this.runStressTest(null));
     $("#validateModelsBtn").on("click", this.validateModels.bind(this));
 
     // Analysis buttons
@@ -189,20 +188,6 @@ class OptionPricingPlatform {
     }
   }
 
-  onModelTypeChange() {
-    const modelType = $("#modelType").val();
-
-    // Hide all parameter sections
-    $("#hestonParams, #jumpParams").hide();
-
-    // Show relevant parameters
-    if (modelType === "heston") {
-      $("#hestonParams").show();
-    } else if (modelType === "jump_diffusion") {
-      $("#jumpParams").show();
-    }
-  }
-
   async calculateBasic(model) {
     try {
       const params = this.getBasicParameters();
@@ -235,45 +220,6 @@ class OptionPricingPlatform {
     }
   }
 
-  async calculateAdvanced() {
-    try {
-      const params = this.getBasicParameters();
-      const modelType = $("#modelType").val();
-      const simulations = parseInt($("#simulations").val());
-
-      const data = {
-        ...params,
-        model: modelType,
-        simulations: simulations,
-      };
-
-      // Add model-specific parameters
-      if (modelType === "heston") {
-        data.kappa = parseFloat($("#kappa").val());
-        data.theta = parseFloat($("#theta").val());
-        data.sigma_v = parseFloat($("#sigma_v").val());
-        data.rho = parseFloat($("#rho").val());
-        data.v0 = data.theta; // Initial variance = long-term variance
-      } else if (modelType === "jump_diffusion") {
-        data.lambda = parseFloat($("#lambda").val());
-        data.mu_j = parseFloat($("#mu_j").val());
-        data.sigma_j = parseFloat($("#sigma_j").val());
-      }
-
-      const response = await fetch("/api/monte_carlo", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-
-      const result = await response.json();
-      this.displayAdvancedResults(result);
-    } catch (error) {
-      console.error("Advanced calculation error:", error);
-      this.showAlert("Error in advanced calculation.", "danger");
-    }
-  }
-
   async getMarketData() {
     const symbol = $("#symbolInput").val().toUpperCase();
     if (!symbol) return;
@@ -300,6 +246,20 @@ class OptionPricingPlatform {
     }
   }
 
+  // Bootstrap 5's bundle no longer registers a jQuery `.modal()` plugin, so
+  // modal show/hide must go through the native bootstrap.Modal API.
+  showAddPositionModal() {
+    bootstrap.Modal.getOrCreateInstance(
+      document.getElementById("addPositionModal")
+    ).show();
+  }
+
+  hideAddPositionModal() {
+    bootstrap.Modal.getOrCreateInstance(
+      document.getElementById("addPositionModal")
+    ).hide();
+  }
+
   addPosition() {
     try {
       const position = {
@@ -317,7 +277,7 @@ class OptionPricingPlatform {
 
       this.portfolio.push(position);
       this.updatePortfolioDisplay();
-      $("#addPositionModal").modal("hide");
+      this.hideAddPositionModal();
       $("#addPositionForm")[0].reset();
 
       this.showAlert("Position added successfully!", "success");
@@ -378,9 +338,9 @@ class OptionPricingPlatform {
                             $${pnl.toFixed(2)}
                         </td>
                         <td>
-                            <button class="btn btn-sm btn-danger" onclick="platform.removePosition(${
+                            <button class="btn btn-sm btn-danger remove-position-btn" data-position-id="${
                               pos.id
-                            })">
+                            }" aria-label="Remove ${pos.symbol} position">
                                 <i class="fas fa-trash"></i>
                             </button>
                         </td>
@@ -411,10 +371,14 @@ class OptionPricingPlatform {
       const response = await fetch("/api/stress_test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(params),
+        body: JSON.stringify({ ...params, scenario }),
       });
 
       const result = await response.json();
+      if (result.error) {
+        this.showAlert(result.error, "danger");
+        return;
+      }
       this.displayStressTestResults(result);
     } catch (error) {
       console.error("Stress test error:", error);
@@ -648,63 +612,13 @@ class OptionPricingPlatform {
     }
   }
 
-  async optimizePortfolio() {
-    const assets = $("#optAssets")
-      .val()
-      .split(",")
-      .map((s) => s.trim());
-    const data = {
-      symbols: assets,
-      method: $("#optMethod").val(),
-      target_return: parseFloat($("#optTargetReturn").val()) / 100,
-    };
-
-    try {
-      const response = await fetch("/api/portfolio/optimize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-
-      const result = await response.json();
-
-      if (result.error) {
-        throw new Error(result.error);
-      }
-
-      $("#optimizationResults").show();
-
-      let weightsHtml = "<strong>Optimal Weights:</strong><br>";
-      result.symbols.forEach((symbol, index) => {
-        weightsHtml += `${symbol}: ${(
-          result.optimal_weights[index] * 100
-        ).toFixed(1)}%<br>`;
-      });
-
-      $("#optimalWeights").html(weightsHtml);
-      $("#portfolioMetrics").html(`
-                <strong>Expected Return:</strong> ${(
-                  result.expected_return * 100
-                ).toFixed(2)}%<br>
-                <strong>Volatility:</strong> ${(
-                  result.volatility * 100
-                ).toFixed(2)}%<br>
-                <strong>Sharpe Ratio:</strong> ${result.sharpe_ratio.toFixed(3)}
-            `);
-    } catch (error) {
-      this.showNotification(
-        `Portfolio Optimization Error: ${error.message}`,
-        "danger"
-      );
-    }
-  }
-
   async analyzeRisk() {
-    // Mock portfolio positions for demonstration
+    const positionValue = parseFloat($("#riskPositionValue").val());
     const positions = [
-      { symbol: "AAPL", value: 100000 },
-      { symbol: "GOOGL", value: 75000 },
-      { symbol: "MSFT", value: 50000 },
+      {
+        symbol: this.currentSymbol || "POSITION",
+        value: isNaN(positionValue) ? 100000 : positionValue,
+      },
     ];
 
     const data = {
@@ -769,7 +683,7 @@ class OptionPricingPlatform {
 
   async calculateHedging() {
     // Get portfolio delta and validate it
-    const portfolioDeltaValue = $("#portfolioDelta").val();
+    const portfolioDeltaValue = $("#positionDelta").val();
     if (!portfolioDeltaValue || isNaN(parseFloat(portfolioDeltaValue))) {
       this.showNotification(
         "Please enter a valid portfolio delta value",
@@ -835,7 +749,7 @@ class OptionPricingPlatform {
         result.sentiment_indicators.fear_greed_index.toFixed(0)
       );
       $("#sentimentVix").text(result.sentiment_indicators.vix_level.toFixed(1));
-      $("#putCallRatio").text(
+      $("#sentimentPutCallRatio").text(
         result.sentiment_indicators.put_call_ratio.toFixed(2)
       );
       $("#overallSentiment").text(result.overall_sentiment.toUpperCase());
@@ -864,8 +778,6 @@ class OptionPricingPlatform {
     // ML Pricing
     $("#mlPriceBtn").on("click", () => this.calculateMLPrice());
 
-    // Portfolio Optimization
-    $("#optimizeBtn").on("click", () => this.optimizePortfolio());
 
     // Risk Management
     $("#riskAnalysisBtn").on("click", () => this.analyzeRisk());
@@ -904,7 +816,10 @@ class OptionPricingPlatform {
     Object.entries(result).forEach(([key, value]) => {
       if (typeof value === "number") {
         const formattedValue =
-          key.includes("price") || key.includes("theta") || key.includes("rho")
+          key.includes("price") ||
+          key.includes("theta") ||
+          key.includes("rho") ||
+          key.includes("vega")
             ? `$${value.toFixed(4)}`
             : value.toFixed(6);
         html += `<tr><td>${this.formatKey(
@@ -915,84 +830,6 @@ class OptionPricingPlatform {
 
     html += "</tbody></table>";
     $("#basicResults").html(html);
-  }
-
-  displayAdvancedResults(result) {
-    let html = `
-            <div class="alert alert-info">
-                <h6><i class="fas fa-rocket me-2"></i>Monte Carlo Results</h6>
-                <small>Model: ${
-                  result.model_type?.toUpperCase() || "Unknown"
-                } | 
-                       Simulations: ${
-                         result.simulations?.toLocaleString() || "Unknown"
-                       }</small>
-            </div>
-            <table class="table table-dark table-striped table-sm">
-        `;
-
-    const metrics = {
-      "Option Price": result.option_price,
-      "Std Error": result.std_error,
-      Delta: result.delta,
-      Gamma: result.gamma,
-      Vega: result.vega,
-      Theta: result.theta,
-    };
-
-    Object.entries(metrics).forEach(([key, value]) => {
-      if (value !== undefined) {
-        const formattedValue =
-          typeof value === "number"
-            ? key.includes("Price") || key.includes("Theta")
-              ? `$${value.toFixed(4)}`
-              : value.toFixed(6)
-            : value;
-        html += `<tr><td>${key}</td><td>${formattedValue}</td></tr>`;
-      }
-    });
-
-    if (result.confidence_interval) {
-      html += `<tr><td>95% CI</td><td>[$${result.confidence_interval[0].toFixed(
-        4
-      )}, $${result.confidence_interval[1].toFixed(4)}]</td></tr>`;
-    }
-
-    html += "</table>";
-    $("#advancedResults").html(html);
-  }
-
-  displayExoticResults(result) {
-    let html = `
-            <div class="alert alert-warning">
-                <h6><i class="fas fa-star me-2"></i>Exotic Option Results</h6>
-                <small>Type: ${
-                  result.exotic_type?.toUpperCase() || "Unknown"
-                }</small>
-            </div>
-            <table class="table table-dark table-striped table-sm">
-                <tr><td>Option Price</td><td>$${
-                  result.option_price?.toFixed(4) || "N/A"
-                }</td></tr>
-                <tr><td>Standard Error</td><td>${
-                  result.std_error?.toFixed(6) || "N/A"
-                }</td></tr>
-        `;
-
-    // Add exotic-specific metrics
-    if (result.barrier_hit_prob) {
-      html += `<tr><td>Barrier Hit Probability</td><td>${(
-        result.barrier_hit_prob * 100
-      ).toFixed(2)}%</td></tr>`;
-    }
-    if (result.hit_probability) {
-      html += `<tr><td>Hit Probability</td><td>${(
-        result.hit_probability * 100
-      ).toFixed(2)}%</td></tr>`;
-    }
-
-    html += "</table>";
-    $("#exoticResults").html(html);
   }
 
   displayMarketData(data) {
@@ -1172,9 +1009,10 @@ class OptionPricingPlatform {
 
   // Enhanced Real-time Market Data
   async updateMarketDashboard() {
+    // This runs silently on a 30s background timer (see startRealTimeUpdates)
+    // -- it must not show the full-page loading overlay, which is reserved
+    // for user-initiated actions.
     try {
-      this.showLoading();
-
       // Update VIX data
       const vixResponse = await fetch("/api/market_data/^VIX");
       if (vixResponse.ok) {
@@ -1203,225 +1041,13 @@ class OptionPricingPlatform {
         }
       }
 
-      this.hideLoading();
     } catch (error) {
       console.error("Market dashboard update failed:", error);
       this.showNotification("Failed to update market data", "warning");
-      this.hideLoading();
     }
   }
 
   // Enhanced Option Pricing with Animations
-  async calculateBasicWithAnimation(model) {
-    const formData = this.getFormData();
-    if (!this.validateFormData(formData)) return;
-
-    this.showLoading();
-
-    try {
-      const response = await fetch(`/api/calculate_${model}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
-
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-      const result = await response.json();
-      this.displayResultsWithAnimation(result, model);
-      this.showNotification(
-        `${model} calculation completed successfully`,
-        "success"
-      );
-    } catch (error) {
-      this.showNotification(`Calculation failed: ${error.message}`, "danger");
-    } finally {
-      this.hideLoading();
-    }
-  }
-
-  displayResultsWithAnimation(result, model) {
-    const resultsDiv = document.getElementById("basicResults");
-
-    // Create enhanced results display
-    const resultsHTML = `
-      <div class="card glass-card">
-        <div class="card-header">
-          <h6 class="mb-0">
-            <i class="fas fa-chart-line me-2"></i>${model
-              .replace("_", "-")
-              .toUpperCase()} Results
-          </h6>
-        </div>
-        <div class="card-body">
-          <div class="row">
-            <div class="col-md-6">
-              <div class="metric-card">
-                <div class="metric-label">Option Price</div>
-                <div class="metric-value">${
-                  result.option_price?.toFixed(4) || "N/A"
-                }</div>
-              </div>
-            </div>
-            <div class="col-md-6">
-              <div class="metric-card">
-                <div class="metric-label">Delta</div>
-                <div class="metric-value performance-${
-                  result.delta > 0 ? "positive" : "negative"
-                }">
-                  ${result.delta?.toFixed(4) || "N/A"}
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="row mt-3">
-            <div class="col-md-3">
-              <div class="performance-indicator">
-                <div class="performance-label">Gamma</div>
-                <div class="performance-value">${
-                  result.gamma?.toFixed(4) || "N/A"
-                }</div>
-              </div>
-            </div>
-            <div class="col-md-3">
-              <div class="performance-indicator">
-                <div class="performance-label">Vega</div>
-                <div class="performance-value">${
-                  result.vega?.toFixed(4) || "N/A"
-                }</div>
-              </div>
-            </div>
-            <div class="col-md-3">
-              <div class="performance-indicator">
-                <div class="performance-label">Theta</div>
-                <div class="performance-value performance-${
-                  result.theta < 0 ? "negative" : "positive"
-                }">
-                  ${result.theta?.toFixed(4) || "N/A"}
-                </div>
-              </div>
-            </div>
-            <div class="col-md-3">
-              <div class="performance-indicator">
-                <div class="performance-label">Rho</div>
-                <div class="performance-value">${
-                  result.rho?.toFixed(4) || "N/A"
-                }</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-
-    resultsDiv.innerHTML = resultsHTML;
-
-    // Add entrance animation
-    const cards = resultsDiv.querySelectorAll(
-      ".metric-card, .performance-indicator"
-    );
-    cards.forEach((card, index) => {
-      card.style.opacity = "0";
-      card.style.transform = "translateY(20px)";
-
-      setTimeout(() => {
-        card.style.transition = "all 0.5s ease";
-        card.style.opacity = "1";
-        card.style.transform = "translateY(0)";
-      }, index * 100);
-    });
-  }
-
-  // Enhanced Portfolio Management
-  async addPositionWithValidation() {
-    const position = {
-      symbol: document.getElementById("posSymbol").value.toUpperCase(),
-      optionType: document.getElementById("posOptionType").value,
-      strike: parseFloat(document.getElementById("posStrike").value),
-      quantity: parseInt(document.getElementById("posQuantity").value),
-      premium: parseFloat(document.getElementById("posPremium").value),
-      expiry: document.getElementById("posExpiry").value,
-      underlying: parseFloat(document.getElementById("posUnderlying").value),
-      volatility: parseFloat(document.getElementById("posVolatility").value),
-    };
-
-    // Validate position data
-    if (!this.validatePosition(position)) {
-      this.showNotification(
-        "Please fill in all required fields correctly",
-        "danger"
-      );
-      return;
-    }
-
-    this.showLoading();
-
-    try {
-      // Calculate current option value
-      const pricingResponse = await fetch("/api/calculate_black_scholes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          S: position.underlying,
-          K: position.strike,
-          T: this.calculateTimeToExpiry(position.expiry),
-          r: 0.05, // Default risk-free rate
-          sigma: position.volatility,
-          optionType: position.optionType,
-        }),
-      });
-
-      if (pricingResponse.ok) {
-        const pricingResult = await pricingResponse.json();
-        position.currentValue =
-          pricingResult.option_price * position.quantity * 100;
-        position.pnl =
-          position.currentValue - position.premium * position.quantity * 100;
-        position.delta = pricingResult.delta * position.quantity * 100;
-        position.gamma = pricingResult.gamma * position.quantity * 100;
-        position.vega = pricingResult.vega * position.quantity;
-        position.theta = pricingResult.theta * position.quantity;
-      }
-
-      this.portfolio.push(position);
-      this.updatePortfolioDisplay();
-      this.showNotification(
-        `Position ${position.symbol} added successfully`,
-        "success"
-      );
-
-      // Close modal and reset form
-      $("#addPositionModal").modal("hide");
-      document.getElementById("addPositionForm").reset();
-    } catch (error) {
-      this.showNotification(
-        `Failed to add position: ${error.message}`,
-        "danger"
-      );
-    } finally {
-      this.hideLoading();
-    }
-  }
-
-  validatePosition(position) {
-    return (
-      position.symbol &&
-      position.strike > 0 &&
-      position.quantity !== 0 &&
-      position.premium > 0 &&
-      position.underlying > 0 &&
-      position.volatility > 0 &&
-      position.expiry
-    );
-  }
-
-  calculateTimeToExpiry(expiryDate) {
-    const today = new Date();
-    const expiry = new Date(expiryDate);
-    const timeDiff = expiry.getTime() - today.getTime();
-    return Math.max(0, timeDiff / (1000 * 3600 * 24 * 365)); // Years
-  }
-
   // Enhanced Real-time Updates
   startRealTimeUpdates() {
     // Update market dashboard every 30 seconds
@@ -1432,7 +1058,7 @@ class OptionPricingPlatform {
     // Update portfolio every 60 seconds
     this.portfolioUpdateInterval = setInterval(() => {
       if (this.portfolio.length > 0) {
-        this.updatePortfolioValues();
+        this.updatePortfolioDisplay();
       }
     }, 60000);
   }
@@ -1463,7 +1089,6 @@ class OptionPricingPlatform {
             : '<i class="fas fa-times"></i>';
         });
       } else {
-        console.log("Quick action elements not found in the DOM");
         return; // Exit early if core elements don't exist
       }
 
@@ -1484,27 +1109,21 @@ class OptionPricingPlatform {
           if (rInput) rInput.value = "0.05";
           if (sigmaInput) sigmaInput.value = "0.2";
 
-          this.calculateBasicWithAnimation("black_scholes");
+          this.calculateBasic("black_scholes");
 
           menu.style.display = "none";
           fab.innerHTML = '<i class="fas fa-plus"></i>';
         });
-      } else {
-        console.log("Quick price button not found in the DOM");
       }
 
       // Quick portfolio addition
       const quickPortfolioBtn = document.getElementById("quickPortfolio");
       if (quickPortfolioBtn) {
         quickPortfolioBtn.addEventListener("click", () => {
-          $("#addPositionModal").modal("show");
+          this.showAddPositionModal();
           menu.style.display = "none";
           fab.innerHTML = '<i class="fas fa-plus"></i>';
         });
-      } else {
-        console.log(
-          "Quick portfolio button not found in the DOM - this is expected based on HTML"
-        );
       }
 
       // Quick risk check
@@ -1518,8 +1137,6 @@ class OptionPricingPlatform {
           menu.style.display = "none";
           fab.innerHTML = '<i class="fas fa-plus"></i>';
         });
-      } else {
-        console.log("Quick risk button not found in the DOM");
       }
     }, 500); // Add a 500ms delay to ensure DOM is fully loaded
   }
@@ -1579,8 +1196,6 @@ let platform;
 $(document).ready(function () {
   // Make sure all elements are rendered before initializing
   setTimeout(() => {
-    console.log("Initializing Option Pricing Platform from document.ready");
-
     // Store the instance globally for access from other scripts
     window.optionPricingPlatform = new OptionPricingPlatform();
     platform = window.optionPricingPlatform;

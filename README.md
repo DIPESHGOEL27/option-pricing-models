@@ -4,7 +4,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://python.org)
 [![Flask](https://img.shields.io/badge/flask-2.0%2B-green)](https://flask.palletsprojects.com)
-[![Status](https://img.shields.io/badge/status-production_ready-brightgreen)](https://github.com)
+[![Status](https://img.shields.io/badge/status-active_development-brightgreen)](https://github.com)
 [![ML Models](https://img.shields.io/badge/ML_models-5%2B-orange)](https://scikit-learn.org)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -46,15 +46,15 @@ _Real-time convergence monitoring for Monte Carlo simulations with variance redu
 ### 🧮 **Advanced Pricing Models**
 
 - **Black-Scholes-Merton** with comprehensive Greeks (Δ, Γ, Θ, ν, ρ)
-- **Monte Carlo Simulation** with antithetic variates (25% variance reduction)
+- **Monte Carlo Simulation** with antithetic variates for variance reduction
 - **Binomial Trees** for American and European options
 - **Heston Stochastic Volatility** model implementation
-- **Neural Network Pricing** achieving **R² ≥ 0.94**
+- **Neural Network Pricing** achieving **R² ≈ 0.999** on held-out validation data
 
 ### 🤖 **Machine Learning & AI**
 
-- **Ensemble Models** combining neural networks, gradient boosting, and random forests
-- **50,000+ training records** with synthetic market data generation
+- **Ensemble Models** combining a neural network, random forest, and XGBoost
+- **50,000 synthetically generated training records** (Black-Scholes-based, not real market data)
 - **Feature Engineering** with 10+ financial indicators
 - **Real-time Model Calibration** and adaptive learning
 - **Volatility Prediction** using advanced time series models
@@ -89,19 +89,21 @@ _Real-time convergence monitoring for Monte Carlo simulations with variance redu
 
 ### **Performance Benchmarks**
 
-| Metric                 | Achievement        | Industry Standard | Improvement          |
-| ---------------------- | ------------------ | ----------------- | -------------------- |
-| **Processing Speed**   | 5,000+ options/day | 1,000-2,000/day   | **150-400%**         |
-| **Model Accuracy**     | R² = 0.94+         | R² = 0.85-0.90    | **4-9%** improvement |
-| **Variance Reduction** | 25% improvement    | Standard MC       | **25%** better       |
-| **Response Time**      | <2ms average       | 5-10ms typical    | **60-80%** faster    |
+| Metric                 | Achievement                      | Industry Standard | Notes                        |
+| ---------------------- | --------------------------------- | ----------------- | ----------------------------- |
+| **Processing Speed**   | 5,000+ options/day                | 1,000-2,000/day   | **150-400%**                  |
+| **Model Accuracy**     | R² ≈ 0.999 (synthetic benchmark)  | R² = 0.85-0.90    | measured, see note below\*    |
+| **Variance Reduction** | ~0.4% (measured)                  | Standard MC        | modest, parameter-dependent   |
+| **Response Time**      | <2ms average                      | 5-10ms typical     | **60-80%** faster             |
+
+\*R² is measured on a synthetic, Black-Scholes-generated validation set (see [Model Validation](MODEL_VALIDATION_GUIDE.md)) — a benchmark of the modeling pipeline, not a claim about live market performance.
 
 ### **Data Science Achievements**
 
-- 🎯 **Neural Network Excellence**: R² ≥ 0.94 on 50,000+ option records
-- 🔄 **Monte Carlo Optimization**: Antithetic variates reducing standard error by 25%
-- 📈 **Ensemble Learning**: Multi-algorithm approach improving prediction accuracy
-- 🧪 **Feature Engineering**: 10+ sophisticated financial indicators
+- 🎯 **Neural Network Excellence**: R² ≈ 0.999 on a 50,000-row synthetic option-pricing validation set
+- 🔄 **Monte Carlo Optimization**: Antithetic variates measured at ~0.4% standard-error reduction for the benchmarked scenario
+- 📈 **Ensemble Learning**: Neural network + random forest + XGBoost, each independently validated
+- 🧪 **Feature Engineering**: Option-type-aware feature set (moneyness, intrinsic value, time-decay terms, volatility transforms) — see [Model Validation](MODEL_VALIDATION_GUIDE.md)
 
 ### **Software Architecture**
 
@@ -127,19 +129,19 @@ Git
 ```bash
 # Clone the repository
 git clone https://github.com/DIPESHGOEL27/option-pricing-models.git
-cd option-pricing-platform
+cd option-pricing-models
 
-# Install dependencies
+# Install dependencies (use `python toggle_features.py full` first for ML features)
 pip install -r requirements.txt
 
 # Start the application
-python api/app.py
+python main.py
 ```
 
 ### Access the Platform
 
-- **Web Interface**: https://option-pricing-models-production.up.railway.app/
-- **Interactive Dashboard**: Real-time pricing and analytics
+- **Local**: http://localhost:8000 after running `python main.py`
+- **Deployment**: see [DEPLOYMENT.md](DEPLOYMENT.md) for Railway/Docker/Vercel instructions
 
 --
 
@@ -154,7 +156,7 @@ python api/app.py
 
 ### **Data Science & Machine Learning**
 
-- Neural network architecture and training (50,000+ records)
+- Neural network architecture and training (50,000 synthetic records)
 - Ensemble methods and model combination techniques
 - Statistical validation and hypothesis testing
 - Feature engineering and selection
@@ -179,10 +181,9 @@ python api/app.py
 
 ### **Quantifiable Achievements**
 
-- **65% reduction** in option analysis time vs manual methods
 - **Processing capacity**: 5,000+ options per day
-- **Model accuracy**: Consistently achieving R² ≥ 0.94
-- **Performance optimization**: 25% variance reduction in simulations
+- **Model accuracy**: R² ≈ 0.999 on a synthetic validation benchmark
+- **Performance optimization**: ~0.4% measured variance reduction from antithetic sampling
 
 ### **Industry Applications**
 
@@ -230,17 +231,16 @@ python api/app.py
 
 ### **Neural Network Performance**
 
-- **Training Accuracy**: R² = 0.95+
-- **Validation Accuracy**: R² = 0.94+
-- **Convergence**: <1000 epochs typical
-- **Feature Importance**: Volatility (35%), Moneyness (25%), Time (20%)
+- **Training R²**: ≈ 0.999 (measured)
+- **Validation R²**: ≈ 0.999 (measured, 10,000-row held-out split)
+- **Convergence**: ~70-120 iterations typical (early stopping)
+- **Full methodology and per-model breakdown**: see [Model Validation Guide](MODEL_VALIDATION_GUIDE.md)
 
 ### **Monte Carlo Validation**
 
-- **Standard Error**: <0.01 for 100,000 simulations
-- **Convergence Rate**: 99% by 50,000 paths
-- **Antithetic Variance Reduction**: 15-25% improvement
-- **Computational Efficiency**: <2 seconds for complex scenarios
+- **Standard Error**: ~0.046 for 100,000 simulations (ATM call benchmark scenario)
+- **Antithetic Variance Reduction**: ~0.4% measured for the benchmarked scenario (varies by option parameters)
+- **Computational Efficiency**: sub-second for the benchmarked scenario
 
 ### **Risk Model Accuracy**
 
@@ -251,21 +251,21 @@ python api/app.py
 
 ---
 
-## 🏅 Resume-Ready Achievements
+## 🎯 Highlights
 
-### **For Data Scientist Roles:**
+### **Data Science**
 
-• **Architected modular Flask application** with 6+ microservices processing 5,000+ daily option calculations
+• **Architected modular Flask application** with 7 independent feature modules processing 5,000+ daily option calculations
 
-• **Trained neural network ensemble on 50,000+ option records** achieving R² ≥ 0.94 for volatility prediction
+• **Trained a neural network + random forest + XGBoost ensemble on 50,000 synthetically generated option-pricing records**, achieving R² ≈ 0.999 on held-out validation data after diagnosing and fixing a missing-feature bug in the training pipeline
 
-• **Implemented Monte Carlo simulation with antithetic variates** reducing standard error by 25% in pricing estimates
+• **Implemented Monte Carlo simulation with antithetic variates**, measuring a ~0.4% standard-error reduction for the benchmarked scenario
 
 • **Built interactive Plotly dashboards** enabling real-time risk analysis and portfolio optimization
 
 • **Developed comprehensive model validation framework** with cross-validation, backtesting, and statistical testing
 
-### **For Financial Analyst Roles:**
+### **Financial Engineering**
 
 • **Implemented Black-Scholes and advanced option pricing models** with comprehensive Greeks calculation
 
@@ -283,16 +283,12 @@ python api/app.py
 
 ### **Project Documentation**
 
-- [Deployment Guide](DEPLOYMENT_GUIDE.md) - Complete setup instructions
-- [API Reference](WEB_APP_README.md) - Comprehensive endpoint documentation
+- [Deployment Guide](DEPLOYMENT.md) - Railway, Docker, and Vercel setup instructions
 - [Model Validation](MODEL_VALIDATION_GUIDE.md) - Statistical testing and validation framework
-- [Resume Summary](RESUME_SUMMARY.md) - Professional achievements and metrics
 
 ### **Technical Deep Dives**
 
 - [Folder Structure](FOLDER_STRUCTURE.md) - Project organization
-- [Feature Verification](verify_resume_features.py) - Automated testing suite
-- [Configuration Guide](config.py) - Environment setup and customization
 
 ---
 

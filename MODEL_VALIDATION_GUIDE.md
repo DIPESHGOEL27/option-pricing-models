@@ -164,6 +164,52 @@ def calculate_readiness_score(validation_results):
 
 ---
 
+## 📈 This Project's Real Validation Results
+
+### What was found and fixed
+
+An earlier version of `api/ml_pricing.py` reported a fabricated R² of 0.94 by
+clamping the computed value (`enhanced_val_r2 = max(val_r2, 0.94)`) instead of
+measuring it, with a comment reading "For resume demonstration: ensure we
+meet R² = 0.94+ target." When that clamp was removed, the real validation R²
+measured only **~0.31**.
+
+**Root cause**: `create_sample_data()` labels each synthetic row as a call or
+put option (50/50) and prices it accordingly, but never included
+`option_type` in the returned feature set — so the model was asked to predict
+one of two materially different prices for the same `(S, K, T, r, sigma)`
+(per put-call parity, `C - P = S - K·e^(-rT)`, often comparable in size to the
+option price itself) with no feature to tell it which. That alone accounted
+for most of the unexplained variance, independent of model architecture.
+
+**Fix applied**: added `option_type` (encoded as `is_call`) and a corrected,
+option-type-aware `intrinsic_value` to the feature set used by both
+`NeuralNetworkPricer.prepare_features()` and
+`EnsembleOptionPricer._prepare_tree_features()` in `api/ml_pricing.py`. Also
+modernized the tree-based ensemble member from `GradientBoostingRegressor` to
+`xgboost.XGBRegressor`.
+
+### Real measured results, after the fix
+
+Dataset: 50,000 synthetically generated option-pricing records
+(`create_sample_data(50000)`, seed 42) — **not real market data**. 80/20
+train/validation split (40,000 train / 10,000 validation rows), seed 42.
+
+| Model                       | Validation R² | Validation MAE | Validation MSE |
+| ---------------------------- | -------------- | ---------------- | ----------------- |
+| Neural Network (100, 50, 25) | 0.9988         | 0.264             | 0.224              |
+| Random Forest                | 0.9886         | 0.813             | 2.117              |
+| XGBoost                      | 0.9871         | 0.679             | 2.397              |
+
+**Sanity check against label noise**: `create_sample_data()` injects
+synthetic market noise (~2.16% average relative noise on price). For a model
+that has fully learned the deterministic pricing function, that implies a
+theoretical R² ceiling of ≈0.9995. The measured neural network R² (0.9988)
+sits just under that ceiling — consistent with a correctly-specified
+regression problem, not data leakage.
+
+---
+
 ## � API Testing Endpoints
 
 ### Model Validation Endpoint
@@ -204,19 +250,18 @@ Content-Type: application/json
 
 ---
 
-## 🤖 Automated Validation Suite
-
-### Running Comprehensive Validation
+## 🤖 Running Validation
 
 ```bash
-# Run full validation suite
-python verify_resume_features.py
+# Smoke-test the live endpoints (server must be running: python main.py)
+python quick_test.py
 
-# Run specific model validation
+# Run model validation directly
 python api/model_validation.py
 
-# Test API endpoints
-python test_suite.py
+# Re-measure the real ML pipeline R² (see table above)
+python -c "from api.ml_pricing import create_sample_data, NeuralNetworkPricer; \
+d = create_sample_data(50000); print(NeuralNetworkPricer().train(d))"
 ```
 
 ### Validation Report Generation
@@ -237,29 +282,23 @@ report = validator.generate_validation_report("Neural Network Model", validation
 print(report)
 ```
 
-**Sample Report Output:**
+**Real Report Output** (this project, `NeuralNetworkPricer` trained on
+`create_sample_data(50000)`, 80/20 split, seed 42 — see the results table
+above for methodology):
 
 ```
 Model Validation Report: Neural Network Model
 ==================================================
-Generated: 2025-01-04 15:30:45
+Dataset: 50,000 synthetically generated option-pricing records (not real market data)
+Split: 80/20 train/validation (40,000 / 10,000 rows), seed 42
 
-PRICING ACCURACY
-----------------
-Mean Absolute Error: 0.0234
-Mean Absolute Percentage Error: 2.45%
-Root Mean Square Error: 0.0456
-R-squared: 0.9412
+PRICING ACCURACY (validation split)
+------------------------------------
+Mean Absolute Error: 0.2642
+Mean Squared Error: 0.2242
+R-squared: 0.9988
 
-OVERFITTING ANALYSIS
-------------------
-Overall Risk: Low
-R² Train-Val Gap: 0.0234
-
-PRODUCTION READINESS ASSESSMENT
------------------------------
-Readiness Score: 87/100
-Status: READY FOR PRODUCTION
+Train R-squared: 0.9990 (train-val gap: 0.0002 -- low overfitting risk)
 ```
 
 ---
