@@ -551,11 +551,20 @@ class OptionPricingPlatform {
 
       const data = await response.json();
 
-      // Update portfolio table
+      if (data.error) {
+        this.showAlert(data.error, "danger");
+        return;
+      }
+
+      // Update portfolio table using the real per-position market values
+      // /api/risk_metrics already computes via Black-Scholes -- position_details
+      // is built in the same order as the positions array was sent.
+      const positionDetails = data.portfolio_summary?.position_details || [];
       let tableHTML = "";
-      this.portfolio.forEach((pos) => {
-        const posValue = pos.quantity * this.calculateCurrentPrice(pos);
-        const pnl = posValue - pos.quantity * pos.premium_paid;
+      this.portfolio.forEach((pos, index) => {
+        const detail = positionDetails[index];
+        const posValue = detail ? detail.market_value : 0;
+        const pnl = detail ? detail.pnl : 0;
 
         tableHTML += `
                     <tr>
@@ -589,12 +598,6 @@ class OptionPricingPlatform {
     } catch (error) {
       console.error("Error updating portfolio:", error);
     }
-  }
-
-  calculateCurrentPrice(position) {
-    // Simplified current price calculation
-    // In a real application, this would use real-time option pricing
-    return position.premium_paid * (0.9 + Math.random() * 0.2); // Mock price change
   }
 
   async runStressTest(scenario) {
@@ -838,48 +841,68 @@ class OptionPricingPlatform {
     Plotly.newPlot("analysisPlot", traces, layout);
   }
 
-  showConvergenceAnalysis() {
-    // Monte Carlo convergence analysis
+  async showConvergenceAnalysis() {
+    // Runs a real Monte Carlo simulation at each size via /api/monte_carlo
+    // and plots the actual returned price/standard error -- no simulated or
+    // hardcoded values.
     const simulationSizes = [1000, 5000, 10000, 25000, 50000, 100000];
-    const prices = [];
-    const errors = [];
+    const params = this.getBasicParameters();
 
-    // Simulate convergence (in real app, this would call the API)
-    const truePrice = 10.45; // Mock true price
-    simulationSizes.forEach((size) => {
-      const error = (1 / Math.sqrt(size)) * 2; // Theoretical error reduction
-      prices.push(truePrice + (Math.random() - 0.5) * error);
-      errors.push(error);
-    });
+    this.showLoading();
+    try {
+      const results = await Promise.all(
+        simulationSizes.map((size) =>
+          fetch("/api/monte_carlo", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...params, model: "gbm", simulations: size }),
+          }).then((r) => r.json())
+        )
+      );
 
-    const trace1 = {
-      x: simulationSizes,
-      y: prices,
-      type: "scatter",
-      mode: "lines+markers",
-      name: "MC Price",
-      line: { color: "green" },
-    };
+      const failed = results.find((r) => r.error);
+      if (failed) {
+        this.showAlert(failed.error, "danger");
+        return;
+      }
 
-    const trace2 = {
-      x: simulationSizes,
-      y: errors,
-      type: "scatter",
-      mode: "lines+markers",
-      name: "Standard Error",
-      yaxis: "y2",
-      line: { color: "orange" },
-    };
+      const prices = results.map((r) => r.option_price);
+      const errors = results.map((r) => r.std_error);
 
-    const layout = {
-      title: "Monte Carlo Convergence Analysis",
-      xaxis: { title: "Number of Simulations", type: "log" },
-      yaxis: { title: "Option Price" },
-      yaxis2: { title: "Standard Error", side: "right", overlaying: "y" },
-      template: "plotly_dark",
-    };
+      const trace1 = {
+        x: simulationSizes,
+        y: prices,
+        type: "scatter",
+        mode: "lines+markers",
+        name: "MC Price",
+        line: { color: "green" },
+      };
 
-    Plotly.newPlot("analysisPlot", [trace1, trace2], layout);
+      const trace2 = {
+        x: simulationSizes,
+        y: errors,
+        type: "scatter",
+        mode: "lines+markers",
+        name: "Standard Error",
+        yaxis: "y2",
+        line: { color: "orange" },
+      };
+
+      const layout = {
+        title: "Monte Carlo Convergence Analysis",
+        xaxis: { title: "Number of Simulations", type: "log" },
+        yaxis: { title: "Option Price" },
+        yaxis2: { title: "Standard Error", side: "right", overlaying: "y" },
+        template: "plotly_dark",
+      };
+
+      Plotly.newPlot("analysisPlot", [trace1, trace2], layout);
+    } catch (error) {
+      console.error("Convergence analysis error:", error);
+      this.showAlert("Error running convergence analysis.", "danger");
+    } finally {
+      this.hideLoading();
+    }
   }
 
   // =================== ADVANCED FEATURES ===================
@@ -1054,7 +1077,16 @@ class OptionPricingPlatform {
                       0
                     )} shares<br>
                     Recommendation: <strong>${result.recommendation.toUpperCase()}</strong><br>
+                    Hedge Effectiveness: ${(
+                      result.hedge_effectiveness * 100
+                    ).toFixed(0)}%<br>
+                    Residual Delta Exposure: ${result.residual_delta_exposure.toFixed(
+                      4
+                    )}<br>
                     Hedge Cost: ${this.formatCurrency(result.hedge_cost)}
+                    <small class="text-muted d-block mt-1">${
+                      result.transaction_cost_note || ""
+                    }</small>
                 </div>
             `);
     } catch (error) {

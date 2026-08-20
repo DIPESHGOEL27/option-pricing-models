@@ -59,17 +59,22 @@ def test_basic_functionality(base_url="http://127.0.0.1:8000"):
             print(f"   ❌ Black-Scholes failed: {response.status_code}")
             return False
         
-        # Test 4: Performance metrics
-        print("4. Testing performance metrics...")
-        response = requests.get(f"{base_url}/api/performance_metrics", timeout=30)
+        # Test 4: Monte Carlo pricing
+        print("4. Testing Monte Carlo pricing...")
+        response = requests.post(
+            f"{base_url}/api/monte_carlo",
+            json={**pricing_data, "model": "gbm", "simulations": 10000},
+            headers={'Content-Type': 'application/json'},
+            timeout=30
+        )
         if response.status_code == 200:
             data = response.json()
-            capacity = data.get('options_per_day_capacity', 0)
-            print(f"   ✅ Performance metrics: {capacity:,} options/day")
+            price = data.get('option_price', 0)
+            print(f"   ✅ Monte Carlo pricing: ${price:.4f}")
         else:
-            print(f"   ❌ Performance metrics failed: {response.status_code}")
+            print(f"   ❌ Monte Carlo pricing failed: {response.status_code}")
             return False
-        
+
         print("\n🎉 All basic tests passed! App is ready for full verification.")
         return True
         

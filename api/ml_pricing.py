@@ -242,21 +242,36 @@ class NeuralNetworkPricer:
         
         return y_pred
     
-    def get_feature_importance(self) -> Dict[str, float]:
+    def get_feature_importance(self, X_val: Optional[np.ndarray] = None,
+                                y_val: Optional[np.ndarray] = None,
+                                n_repeats: int = 10, random_state: int = 42) -> Dict[str, float]:
         """
-        Get feature importance scores (approximated using permutation importance).
+        Real permutation importance: for each feature, shuffle its values
+        across the validation set and measure the resulting drop in R^2.
+        MLPRegressor has no built-in importance attribute, so this class
+        doesn't retain the full training set after fit() -- pass the
+        validation split (X_val, y_val) used at train time.
         """
         if not self.is_trained or self.feature_names is None:
             raise ValueError("Model must be trained to get feature importance")
-        
-        # Note: MLPRegressor doesn't have built-in feature importance
-        # This is a simplified placeholder - real implementation would use
-        # permutation importance or SHAP values
-        
-        # For demonstration, return uniform importance
-        n_features = len(self.feature_names)
-        importance = {name: 1.0/n_features for name in self.feature_names}
-        
+        if X_val is None or y_val is None:
+            raise ValueError(
+                "get_feature_importance requires the validation features/target "
+                "(X_val, y_val) used at train time"
+            )
+
+        from sklearn.inspection import permutation_importance
+
+        X_val_scaled = self.scaler_X.transform(X_val)
+        y_val_scaled = self.scaler_y.transform(np.asarray(y_val).reshape(-1, 1)).ravel()
+
+        result = permutation_importance(
+            self.model, X_val_scaled, y_val_scaled,
+            n_repeats=n_repeats, random_state=random_state, scoring='r2'
+        )
+
+        importance = {name: float(result.importances_mean[i]) for i, name in enumerate(self.feature_names)}
+
         return importance
     
     def save_model(self, filepath: str):

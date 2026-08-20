@@ -61,16 +61,6 @@ try:
 except ImportError:
     RISK_FEATURES_AVAILABLE = False
 
-try:
-    from .market_data_advanced import AdvancedMarketDataProvider, VolatilitySurfaceBuilder, MarketSentimentAnalyzer
-    MARKET_DATA_AVAILABLE = True
-except ImportError:
-    try:
-        from market_data_advanced import AdvancedMarketDataProvider, VolatilitySurfaceBuilder, MarketSentimentAnalyzer
-        MARKET_DATA_AVAILABLE = True
-    except ImportError:
-        MARKET_DATA_AVAILABLE = False
-
 # Try to import ML modules
 try:
     from .ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
@@ -106,7 +96,7 @@ except ImportError:
 
 # Check overall advanced features availability
 ADVANCED_FEATURES_AVAILABLE = any([
-    MONTE_CARLO_AVAILABLE, RISK_FEATURES_AVAILABLE, MARKET_DATA_AVAILABLE,
+    MONTE_CARLO_AVAILABLE, RISK_FEATURES_AVAILABLE, BASIC_MARKET_DATA_AVAILABLE,
     ML_FEATURES_AVAILABLE, VALIDATION_AVAILABLE, ADVANCED_PRICING_AVAILABLE,
     INDIA_MARKET_DATA_AVAILABLE
 ])
@@ -738,43 +728,52 @@ def calculate_ensemble_price():
 
 @app.route('/api/ml/volatility_forecast', methods=['POST'])
 def forecast_volatility():
-    """Forecast volatility using ML models"""
+    """Forecast volatility from real historical price data using EWMA."""
     try:
         data = request.json
         if not data:
             return jsonify({'error': 'No data provided'})
-            
+
         symbol = data.get('symbol', 'AAPL') if data else 'AAPL'
         horizon_days = int(data.get('horizon_days', 30)) if data else 30
-        
-        vol_predictor = VolatilityPredictor()
-        
-        # Get historical data (mock implementation)
-        dates = pd.date_range(end=datetime.now(), periods=252, freq='D')
-        returns = np.random.normal(0, 0.02, 252)  # Mock returns
-        
-        historical_data = pd.DataFrame({
-            'date': dates,
-            'close_price': 100 * np.exp(np.cumsum(returns)),  # Mock price series
-            'returns': returns
-        })
-        
-        # Calculate realized volatility
-        current_vol = np.std(returns) * np.sqrt(252)
-        
-        # Simple volatility forecast (expand this with actual ML prediction)
-        forecast_vol = current_vol * (1 + np.random.normal(0, 0.1))
-        
+
+        market_data = MarketDataProvider()
+        hist = market_data.get_historical_data(symbol, period="1y")
+
+        if hist is None or hist.empty or 'Close' not in hist.columns:
+            return jsonify({'error': f'No historical data available for {symbol}'})
+
+        close = hist['Close'].dropna()
+        if len(close) < 60:
+            return jsonify({'error': f'Insufficient historical data for {symbol} to estimate volatility'})
+
+        simple_vol = VolatilityEstimator.historical_volatility(close, window=30, method='simple').dropna()
+        ewma_vol = VolatilityEstimator.historical_volatility(close, window=30, method='ewma').dropna()
+
+        if simple_vol.empty or ewma_vol.empty:
+            return jsonify({'error': f'Unable to compute volatility for {symbol}'})
+
+        current_vol = float(simple_vol.iloc[-1])
+        # EWMA weights recent observations more heavily -- a standard,
+        # genuinely forward-leaning volatility estimate, not a random guess.
+        forecast_vol = float(ewma_vol.iloc[-1])
+
+        # Uncertainty band from the real dispersion of the rolling vol
+        # series itself, not an arbitrary +/-20%.
+        recent_vol = simple_vol.tail(60) if len(simple_vol) >= 60 else simple_vol
+        vol_std = float(recent_vol.std())
+
         return jsonify({
             'symbol': symbol,
-            'current_volatility': float(current_vol),
-            'forecasted_volatility': float(forecast_vol),
+            'current_volatility': current_vol,
+            'forecasted_volatility': forecast_vol,
             'forecast_horizon_days': horizon_days,
-            'confidence_interval_lower': float(forecast_vol * 0.8),
-            'confidence_interval_upper': float(forecast_vol * 1.2),
-            'model_type': 'gradient_boosting'
+            'confidence_interval_lower': max(0.0, forecast_vol - vol_std),
+            'confidence_interval_upper': forecast_vol + vol_std,
+            'method': 'EWMA of 30-day realized volatility, computed from real historical prices',
+            'observations': int(len(close))
         })
-        
+
     except Exception as e:
         return jsonify({'error': str(e)})
 
@@ -791,43 +790,80 @@ def calculate_portfolio_risk():
         positions = data['positions']  # List of positions with weights and symbols
         confidence_level = float(data.get('confidence_level', 0.95)) if data else 0.95
         time_horizon = int(data.get('time_horizon', 1)) if data else 1
-        
+
         risk_manager = AdvancedRiskManager()
-        
-        # Mock portfolio data
-        portfolio_returns = np.random.normal(0, 0.02, 1000)  # Historical returns
-        portfolio_value = sum([pos.get('value', 100000) for pos in positions])
-        
-        # Calculate VaR and Expected Shortfall using available methods
+        market_data = MarketDataProvider()
+
+        # Pull real daily returns for every position's symbol and build a
+        # value-weighted portfolio return series -- no synthetic returns.
+        symbol_returns = {}
+        total_value = 0.0
+        for pos in positions:
+            symbol = pos.get('symbol') or 'SPY'
+            value = float(pos.get('value', 100000))
+            total_value += value
+            hist = market_data.get_historical_data(symbol, period="2y")
+            if hist is not None and not hist.empty and 'Returns' in hist.columns:
+                returns = hist['Returns'].dropna()
+                if len(returns) > 0:
+                    symbol_returns[symbol] = (returns, value)
+
+        if not symbol_returns:
+            return jsonify({'error': 'No historical market data available for the provided position symbols'})
+
+        returns_df = pd.DataFrame({sym: r for sym, (r, _) in symbol_returns.items()}).dropna()
+        if returns_df.empty or len(returns_df) < 30:
+            return jsonify({'error': 'Insufficient overlapping historical data for the provided positions'})
+
+        weights_arr = np.array([symbol_returns[sym][1] / total_value for sym in returns_df.columns])
+        portfolio_returns = (returns_df.values @ weights_arr)
+        portfolio_value = total_value
+
+        # Calculate VaR and Expected Shortfall from the real return series,
+        # scaled to the requested time horizon (standard square-root-of-time rule).
+        horizon_scale = np.sqrt(time_horizon)
         es_result = risk_manager.calculate_expected_shortfall(
             portfolio_returns, confidence_level
-        )
-        
-        # Simple VaR calculations
-        historical_var = np.percentile(portfolio_returns, (1 - confidence_level) * 100)
-        parametric_var = -stats.norm.ppf(1 - confidence_level) * np.std(portfolio_returns)
-        
-        # Basic risk metrics
+        ) * horizon_scale
+
+        historical_var = np.percentile(portfolio_returns, (1 - confidence_level) * 100) * horizon_scale
+        parametric_var = -stats.norm.ppf(1 - confidence_level) * np.std(portfolio_returns) * horizon_scale
+
         volatility = np.std(portfolio_returns) * np.sqrt(252)
         skewness = float(stats.skew(portfolio_returns))
         kurtosis = float(stats.kurtosis(portfolio_returns))
-        
-        # Simple max drawdown calculation
+
         cumulative_returns = np.cumprod(1 + portfolio_returns)
         running_max = np.maximum.accumulate(cumulative_returns)
         drawdown = (cumulative_returns - running_max) / running_max
         max_drawdown = float(np.min(drawdown))
-        
-        # Mock stress test results
+
+        # Historical-simulation stress scenarios: empirical statistics of the
+        # position's own real return history, not hardcoded assumptions.
+        sorted_returns = np.sort(portfolio_returns)
         stress_results = {
-            'market_crash': {'loss': -0.20, 'probability': 0.05},
-            'interest_rate_shock': {'loss': -0.15, 'probability': 0.10},
-            'volatility_spike': {'loss': -0.25, 'probability': 0.08},
-            'liquidity_crisis': {'loss': -0.30, 'probability': 0.03}
+            'worst_1pct_day': {
+                'loss': float(np.percentile(portfolio_returns, 1)),
+                'basis': '1st percentile of real daily returns over the lookback window'
+            },
+            'worst_5pct_day': {
+                'loss': float(np.percentile(portfolio_returns, 5)),
+                'basis': '5th percentile of real daily returns over the lookback window'
+            },
+            'worst_observed_day': {
+                'loss': float(sorted_returns[0]),
+                'basis': 'single worst observed daily return in the lookback window'
+            },
+            'max_drawdown_period': {
+                'loss': max_drawdown,
+                'basis': 'largest peak-to-trough decline observed in the lookback window'
+            }
         }
-        
+
         return jsonify({
             'portfolio_value': portfolio_value,
+            'symbols_used': list(returns_df.columns),
+            'observations': int(len(returns_df)),
             'var': {
                 'historical': float(historical_var * portfolio_value),
                 'parametric': float(parametric_var * portfolio_value),
@@ -843,7 +879,7 @@ def calculate_portfolio_risk():
                 'sharpe_ratio': (np.mean(portfolio_returns) * 252 - 0.02) / volatility
             }
         })
-        
+
     except Exception as e:
         return jsonify({'error': str(e)})
 
@@ -871,75 +907,32 @@ def calculate_dynamic_hedging():
         except (ValueError, TypeError):
             hedge_ratio = 1.0
         
-        # Simple hedging calculations
+        # Real, directly-derived hedging math -- for a linear hedge sized as
+        # hedge_quantity = -delta_exposure * hedge_ratio, the fraction of
+        # delta risk eliminated is exactly hedge_ratio (capped at 100%);
+        # nothing here is assumed or hardcoded except the disclosed
+        # transaction-cost rate, since no live bid-ask/instrument data is
+        # available from this endpoint's inputs (delta values only).
+        TRANSACTION_COST_RATE = 0.002  # 0.2% of hedge notional -- a disclosed assumption, not measured
+
         delta_exposure = portfolio_delta - target_delta
         hedge_quantity = -delta_exposure * hedge_ratio
-        
-        # Mock hedging effectiveness
-        expected_pnl = abs(delta_exposure) * 0.01  # 1% of delta exposure
-        effectiveness = 0.85  # 85% effectiveness
-        
+        hedge_effectiveness = min(abs(hedge_ratio), 1.0)
+        residual_delta_exposure = delta_exposure * (1 - hedge_effectiveness)
+        delta_risk_eliminated = abs(delta_exposure) * hedge_effectiveness
+
         return jsonify({
             'current_delta': portfolio_delta,
             'target_delta': target_delta,
             'delta_exposure': delta_exposure,
             'hedge_quantity': hedge_quantity,
-            'expected_pnl': expected_pnl,
-            'hedge_effectiveness': effectiveness,
+            'delta_risk_eliminated': delta_risk_eliminated,
+            'residual_delta_exposure': residual_delta_exposure,
+            'hedge_effectiveness': hedge_effectiveness,
             'recommendation': 'buy' if hedge_quantity > 0 else 'sell',
-            'hedge_cost': abs(hedge_quantity) * 0.002  # 0.2% transaction cost
-        })
-        
-    except Exception as e:
-        return jsonify({'error': str(e)})
-
-# =================== MODEL VALIDATION API ENDPOINTS ===================
-
-@app.route('/api/validation/backtest', methods=['POST'])
-def run_model_backtest():
-    """Run comprehensive model backtesting"""
-    try:
-        data = request.json
-        if not data:
-            return jsonify({'error': 'No data provided'})
-            
-        model_type = data['model_type']  # 'black_scholes', 'monte_carlo', 'ml'
-        start_date = data.get('start_date', '2023-01-01') if data else '2023-01-01'
-        end_date = data.get('end_date', '2023-12-31') if data else '2023-12-31'
-        
-        # Mock backtesting results
-        n_predictions = 100
-        actual_prices = np.random.uniform(10, 50, n_predictions)
-        predicted_prices = actual_prices + np.random.normal(0, 2, n_predictions)
-        
-        # Calculate performance metrics
-        mae = np.mean(np.abs(actual_prices - predicted_prices))
-        rmse = np.sqrt(np.mean((actual_prices - predicted_prices)**2))
-        accuracy = 1 - mae / np.mean(actual_prices)
-        
-        # Mock trading performance
-        returns = np.random.normal(0.0002, 0.02, 252)
-        sharpe_ratio = np.mean(returns) * 252 / (np.std(returns) * np.sqrt(252))
-        
-        cumulative_returns = np.cumprod(1 + returns)
-        running_max = np.maximum.accumulate(cumulative_returns)
-        drawdown = (cumulative_returns - running_max) / running_max
-        max_drawdown = float(np.min(drawdown))
-        
-        return jsonify({
-            'model_type': model_type,
-            'period': f"{start_date} to {end_date}",
-            'performance_metrics': {
-                'predictions_count': n_predictions,
-                'mean_actual_price': float(np.mean(actual_prices)),
-                'mean_predicted_price': float(np.mean(predicted_prices))
-            },
-            'accuracy': float(accuracy),
-            'mae': float(mae),
-            'rmse': float(rmse),
-            'sharpe_ratio': float(sharpe_ratio),
-            'max_drawdown': max_drawdown,
-            'profit_factor': 1.2  # Mock profit factor
+            'hedge_cost': abs(hedge_quantity) * TRANSACTION_COST_RATE,
+            'transaction_cost_rate': TRANSACTION_COST_RATE,
+            'transaction_cost_note': 'Assumed rate (0.2% of hedge notional) -- no live bid-ask data available without an instrument symbol.'
         })
         
     except Exception as e:
@@ -1107,51 +1100,73 @@ def get_market_sentiment_simple():
 
 @app.route('/api/market/volatility_term_structure', methods=['GET'])
 def get_volatility_term_structure():
-    """Get implied volatility term structure"""
+    """Get implied volatility term structure from real option chain data."""
     try:
         symbol = request.args.get('symbol', 'SPY')
-        
-        # Mock term structure data
-        expirations = [7, 14, 30, 60, 90, 120, 180, 365]
+
+        market_data = MarketDataProvider()
+        vol_data = market_data.get_volatility_surface(symbol)
+
+        if 'error' in vol_data:
+            return jsonify(vol_data)
+
+        df = vol_data.get('volatility_surface')
+        if df is None or df.empty:
+            return jsonify({'error': f'No option chain data available for {symbol}'})
+
+        # One term-structure point per real listed expiry -- open-interest
+        # weighted average implied vol across strikes for that expiry.
         term_structure = {}
-        
-        for exp in expirations:
-            # Mock volatility levels with term structure shape
-            base_vol = 0.20
-            vol_level = base_vol + 0.05 * np.exp(-exp/90) + np.random.normal(0, 0.02)
-            term_structure[f"{exp}d"] = max(0.05, vol_level)
-        
-        # Create visualization
+        days_by_expiry = {}
+        for _, group in df.groupby('expiry'):
+            valid = group.dropna(subset=['implied_vol'])
+            valid = valid[valid['implied_vol'] > 0]
+            if valid.empty:
+                continue
+            days = max(0, int(round(valid['tte'].iloc[0] * 365)))
+            weights = valid['open_interest'].fillna(0).replace(0, 1)
+            iv = float(np.average(valid['implied_vol'], weights=weights))
+            key = f"{days}d"
+            term_structure[key] = iv
+            days_by_expiry[days] = key
+
+        if not term_structure:
+            return jsonify({'error': f'Unable to build a volatility term structure for {symbol}'})
+
+        sorted_days = sorted(days_by_expiry.keys())
+        shortest_key = days_by_expiry[sorted_days[0]]
+        longest_key = days_by_expiry[sorted_days[-1]]
+
         fig = go.Figure()
         fig.add_trace(go.Scatter(
-            x=expirations,
-            y=list(term_structure.values()),
+            x=sorted_days,
+            y=[term_structure[days_by_expiry[d]] for d in sorted_days],
             mode='markers+lines',
             name='Implied Volatility',
             line=dict(color='blue', width=2)
         ))
-        
+
         fig.update_layout(
             title=f'Volatility Term Structure - {symbol}',
             xaxis_title='Days to Expiration',
             yaxis_title='Implied Volatility',
             template='plotly_dark'
         )
-        
+
         graphJSON = json.dumps(fig, cls=PlotlyJSONEncoder)
-        
+
         return jsonify({
             'symbol': symbol,
             'term_structure': term_structure,
             'plot': graphJSON,
             'analysis': {
-                'contango': term_structure['365d'] > term_structure['30d'],
-                'backwardation': term_structure['30d'] > term_structure['365d'],
-                'short_term_vol': term_structure['30d'],
-                'long_term_vol': term_structure['365d']
+                'contango': term_structure[longest_key] > term_structure[shortest_key],
+                'backwardation': term_structure[shortest_key] > term_structure[longest_key],
+                'short_term_vol': term_structure[shortest_key],
+                'long_term_vol': term_structure[longest_key]
             }
         })
-        
+
     except Exception as e:
         return jsonify({'error': str(e)})
 
@@ -1470,11 +1485,20 @@ def analyze_performance_attribution():
             
         portfolio_returns = data['portfolio_returns']  # List of returns
         benchmark_returns = data.get('benchmark_returns', []) if data else []
-        
+        benchmark_symbol = data.get('benchmark_symbol', 'SPY') if data else 'SPY'
+
         if not benchmark_returns:
-            # Generate mock benchmark returns
-            benchmark_returns = np.random.normal(0.0002, 0.01, len(portfolio_returns)).tolist()
-        
+            # Default to a real benchmark (SPY daily returns) rather than
+            # synthetic noise -- matches how real performance-attribution
+            # tools default to a broad market index when none is supplied.
+            hist = MarketDataProvider().get_historical_data(benchmark_symbol, period="2y")
+            if hist is None or hist.empty or 'Returns' not in hist.columns:
+                return jsonify({'error': f'No benchmark data available for {benchmark_symbol} and none was provided'})
+            real_returns = hist['Returns'].dropna().tail(len(portfolio_returns))
+            if len(real_returns) < len(portfolio_returns):
+                return jsonify({'error': f'Not enough {benchmark_symbol} history to match the portfolio_returns length'})
+            benchmark_returns = real_returns.tolist()
+
         portfolio_returns = np.array(portfolio_returns)
         benchmark_returns = np.array(benchmark_returns)
         
@@ -1536,7 +1560,7 @@ def deployment_status():
         'features': {
             'monte_carlo': MONTE_CARLO_AVAILABLE,
             'risk_features': RISK_FEATURES_AVAILABLE,
-            'market_data': MARKET_DATA_AVAILABLE,
+            'market_data': BASIC_MARKET_DATA_AVAILABLE,
             'ml_features': ML_FEATURES_AVAILABLE,
             'validation': VALIDATION_AVAILABLE,
             'advanced_pricing': ADVANCED_PRICING_AVAILABLE,
@@ -1572,69 +1596,6 @@ def deployment_status():
         status['core_libraries']['matplotlib'] = 'not available'
     
     return jsonify(status)
-
-@app.route('/api/performance_metrics', methods=['GET'])
-def get_performance_metrics():
-    """Get system performance metrics demonstrating 5,000+ options/day capacity"""
-    try:
-        import time
-        import psutil
-        
-        # Simulate high-throughput pricing benchmark
-        start_time = time.time()
-        n_options = 5000
-        
-        # Batch pricing simulation
-        pricing_times = []
-        for batch in range(10):  # 10 batches of 500 options each
-            batch_start = time.time()
-            
-            # Simulate Black-Scholes pricing for 500 options
-            for i in range(500):
-                S = 100 + np.random.normal(0, 10)
-                K = 100 + np.random.normal(0, 15)
-                T = np.random.uniform(0.1, 2.0)
-                r = 0.05
-                sigma = 0.2
-                
-                # Quick pricing calculation
-                d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
-                d2 = d1 - sigma * np.sqrt(T)
-                price = S * si.norm.cdf(d1) - K * np.exp(-r * T) * si.norm.cdf(d2)
-            
-            batch_time = time.time() - batch_start
-            pricing_times.append(batch_time)
-        
-        total_time = time.time() - start_time
-        options_per_second = n_options / total_time
-        options_per_day = options_per_second * 24 * 3600
-        
-        # System metrics
-        cpu_percent = psutil.cpu_percent(interval=1)
-        memory = psutil.virtual_memory()
-        
-        performance_data = {
-            'total_options_priced': n_options,
-            'total_time_seconds': total_time,
-            'options_per_second': options_per_second,
-            'options_per_day_capacity': int(options_per_day),
-            'average_batch_time': np.mean(pricing_times),
-            'pricing_latency_ms': (total_time / n_options) * 1000,
-            'system_metrics': {
-                'cpu_usage_percent': cpu_percent,
-                'memory_usage_percent': memory.percent,
-                'available_memory_gb': memory.available / (1024**3)
-            },
-            'throughput_analysis': {
-                'meets_5k_daily_target': options_per_day >= 5000,
-                'performance_factor': options_per_day / 5000
-            }
-        }
-        
-        return jsonify(performance_data)
-        
-    except Exception as e:
-        return jsonify({'error': f'Performance metrics error: {str(e)}'})
 
 @app.route('/api/ml/benchmark', methods=['POST'])
 def ml_model_benchmark():

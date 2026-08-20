@@ -1,356 +1,251 @@
-# 🚀 Advanced Option Pricing Platform
-
-## Professional-Grade Financial Engineering & Data Science Showcase
+# Advanced Option Pricing Platform
 
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://python.org)
-[![Flask](https://img.shields.io/badge/flask-2.0%2B-green)](https://flask.palletsprojects.com)
-[![Status](https://img.shields.io/badge/status-active_development-brightgreen)](https://github.com)
-[![ML Models](https://img.shields.io/badge/ML_models-5%2B-orange)](https://scikit-learn.org)
+[![Flask](https://img.shields.io/badge/flask-2.3%2B-green)](https://flask.palletsprojects.com)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-> **A comprehensive financial engineering platform demonstrating advanced option pricing models, machine learning capabilities, and sophisticated risk management - designed to showcase data science and quantitative finance expertise for professional roles.**
+A Flask-based option pricing and risk analysis platform covering the US and
+Indian (NSE/BSE) equity derivatives markets. It implements standard and
+advanced pricing models (Black-Scholes, Binomial Trees, Monte Carlo,
+Heston, Jump-Diffusion), a machine-learning pricing ensemble, a portfolio
+risk suite (VaR, Expected Shortfall, stress testing, delta hedging), and
+live market data integration, all exposed through a REST API and an
+interactive web dashboard.
 
----
+## Problem Statement
 
-## 📸 Platform Screenshots
+Pricing and risk tools for options are either locked behind expensive
+institutional platforms (Bloomberg, Refinitiv) or scattered across
+disconnected scripts and notebooks that compute a single price with no
+surrounding risk context. Retail traders, students, and engineers evaluating
+quantitative finance workflows generally have no single, free, self-hostable
+place to:
+
+- price the same option under multiple models and compare the results,
+- see how a machine-learning pricer performs against closed-form and
+  simulation-based benchmarks,
+- evaluate portfolio-level risk (VaR, Expected Shortfall, stress scenarios,
+  hedging) using real historical data rather than assumed constants, and
+- do all of the above for Indian market instruments (NSE/BSE), where free
+  tooling is considerably sparser than for US markets.
+
+This project addresses that gap: one Flask application, backed by real
+market data where real data is available, with every model's assumptions
+and data source documented rather than hidden behind a number.
+
+## Use Cases
+
+- **Learning and teaching quantitative finance**: compare Black-Scholes,
+  Binomial, and Monte Carlo prices for the same contract, inspect Greeks,
+  and see Monte Carlo convergence as simulation count increases.
+- **Model prototyping**: use the ML pricing ensemble (neural network,
+  random forest, XGBoost) and volatility forecasting as a reference
+  implementation, including a documented example of a real accuracy bug
+  (see [Model Validation](MODEL_VALIDATION_GUIDE.md)) and how it was
+  diagnosed and fixed.
+- **Portfolio risk analysis**: enter option positions, compute historical
+  and parametric VaR, Expected Shortfall, and stress-test results derived
+  from real historical returns for the underlying symbols.
+- **Indian market analysis**: pull real NSE F&O option chains, Put/Call
+  Ratio, max pain, and RBI policy/G-Sec rates for NIFTY, BANKNIFTY, and
+  individual NSE-listed stocks.
+- **API integration**: every feature is available as a JSON REST endpoint,
+  independent of the bundled dashboard, for use from another application or
+  a notebook.
+
+## Core Features
+
+### Pricing Models
+
+- Black-Scholes-Merton with full Greeks (Delta, Gamma, Theta, Vega, Rho)
+- Binomial Tree pricing for American and European options
+- Monte Carlo simulation (GBM) with antithetic variates for variance
+  reduction, plus Heston stochastic volatility and Merton jump-diffusion
+  models via `api/advanced_models.py`
+- Interactive Monte Carlo convergence analysis (real simulations at
+  increasing path counts, plotted live)
+
+### Machine Learning Pricing
+
+- An ensemble of a neural network (`MLPRegressor`), random forest, and
+  XGBoost, trained on synthetically generated, Black-Scholes-priced data
+  (never presented as market data)
+- Feature importance computed with real permutation importance
+  (`sklearn.inspection.permutation_importance`), not a static or invented
+  ranking
+- Documented, reproducible validation results, including a real accuracy
+  bug found and fixed during development of this project — see
+  [Model Validation](MODEL_VALIDATION_GUIDE.md) for the full account,
+  including what was wrong, why, and the measured before/after numbers
+
+### Risk Management
+
+- Value at Risk (historical and parametric) and Expected Shortfall,
+  computed from real historical returns of the position symbols supplied,
+  not simulated placeholder returns
+- Stress testing against the empirical worst days observed in the
+  lookback window (1st/5th percentile, worst single day, max drawdown)
+- Delta hedging with formula-derived hedge effectiveness and a disclosed,
+  labeled transaction-cost assumption (no live bid-ask feed is used to
+  estimate execution cost)
+- Portfolio-level position tracking with Black-Scholes-computed market
+  values and P&L
+
+### Market Data & Analytics
+
+- Live US market data via `yfinance`: quotes, option chains, historical
+  volatility, implied-volatility term structure and smile, and sentiment
+  indicators (VIX level, put/call ratio, fear-greed index) computed from
+  that data
+- Interactive Plotly visualizations: payoff diagrams, Greeks sensitivity,
+  volatility smile and term structure, Monte Carlo convergence
+
+### India Market (NSE/BSE) Support
+
+- NSE/BSE equity and index quotes via `yfinance` (`.NS` / `.BO` suffixes)
+- Real NSE F&O option chains for indices (NIFTY, BANKNIFTY, FINNIFTY,
+  MIDCPNIFTY, NIFTYNXT50) and individual stocks, via
+  [jugaad-data](https://github.com/jugaad-py/jugaad-data)
+- Put/Call Ratio, max pain, and open-interest buildup analytics with an
+  interactive chart
+- RBI policy repo rate and G-Sec yields as an India risk-free-rate proxy
+- A market switcher (US / India-NSE / India-BSE) that swaps the dashboard,
+  currency formatting, and symbol handling; BSE has no free options data
+  source and is shown as unavailable rather than silently failing
+
+## Screenshots
 
 ### Black-Scholes Option Pricing
 
 ![Black-Scholes Pricing](Screenshots/Black_Scholes.png)
-_Real-time Black-Scholes pricing with comprehensive Greeks calculation and sensitivity analysis_
+Real-time Black-Scholes pricing with Greeks and sensitivity analysis.
 
 ### Binomial Tree Model
 
-![Binomial Model](Screenshots/Binomial.png)  
-_Multi-step binomial tree implementation for American and European options_
+![Binomial Model](Screenshots/Binomial.png)
+Multi-step binomial tree pricing for American and European options.
 
 ### Risk Management Dashboard
 
 ![Risk Management](Screenshots/Risk_management.png)
-_Advanced risk metrics including VaR, Expected Shortfall, and stress testing scenarios_
+VaR, Expected Shortfall, and stress-test results computed from real
+historical data.
 
 ### Greeks Visualization
 
 ![Greeks Plot](Screenshots/greeks_plot.png)
-_Interactive visualization of option sensitivities (Delta, Gamma, Theta, Vega, Rho)_
+Interactive visualization of option sensitivities.
 
 ### Monte Carlo Convergence Analysis
 
 ![Convergence Plot](Screenshots/conv_plot.png)
-_Real-time convergence monitoring for Monte Carlo simulations with variance reduction techniques_
+Live convergence of the Monte Carlo price estimate as simulation count
+increases.
 
----
+## Model Validation
 
-## ✨ Core Features & Capabilities
+The ML pricing ensemble's validation R² is measured on a held-out split of
+synthetically generated, Black-Scholes-priced data — it demonstrates that
+the pipeline correctly learns the pricing function it was trained on, and
+is not a claim about predicting real market prices. An earlier version of
+this project reported a fabricated R² of 0.94 by clamping the computed
+value; that clamp has been removed. The real, measured validation R² after
+fixing the underlying feature bug is documented in full, including
+methodology and per-model numbers, in
+[MODEL_VALIDATION_GUIDE.md](MODEL_VALIDATION_GUIDE.md).
 
-### 🧮 **Advanced Pricing Models**
+## Technology Stack
 
-- **Black-Scholes-Merton** with comprehensive Greeks (Δ, Γ, Θ, ν, ρ)
-- **Monte Carlo Simulation** with antithetic variates for variance reduction
-- **Binomial Trees** for American and European options
-- **Heston Stochastic Volatility** model implementation
-- **Neural Network Pricing** achieving **R² ≈ 0.999** on held-out validation data
+**Backend**: Python 3.8+, Flask, NumPy, SciPy, pandas, scikit-learn,
+XGBoost, Plotly (server-side figure generation)
 
-### 🤖 **Machine Learning & AI**
+**Market data**: yfinance (US and NSE/BSE quotes and option chains via
+`.NS`/`.BO` suffixes), jugaad-data (real NSE F&O option chains and RBI
+rates)
 
-- **Ensemble Models** combining a neural network, random forest, and XGBoost
-- **50,000 synthetically generated training records** (Black-Scholes-based, not real market data)
-- **Feature Engineering** with 10+ financial indicators
-- **Real-time Model Calibration** and adaptive learning
-- **Volatility Prediction** using advanced time series models
+**Frontend**: server-rendered Jinja2 template, vanilla JavaScript and
+jQuery, Bootstrap 5, Plotly.js, and Font Awesome, all loaded from CDN — no
+Node.js build step or `package.json` is required to run this project
 
-### 🛡️ **Risk Management Suite**
+**Deployment**: Railway (primary target, via Nixpacks), Docker/Gunicorn,
+and a reduced-dependency configuration for Vercel
 
-- **Value at Risk (VaR)** - Historical, Parametric, Monte Carlo methods
-- **Expected Shortfall** and Conditional VaR calculations
-- **Stress Testing** with customizable market scenarios
-- **Dynamic Hedging** with real-time delta neutrality
-- **Portfolio Risk Attribution** and decomposition analysis
+## API
 
-### 📊 **Interactive Analytics Platform**
+The backend exposes over 20 REST endpoints under `/api/`, covering
+pricing (`/api/calculate_black_scholes`, `/api/calculate_binomial`,
+`/api/monte_carlo`), ML pricing (`/api/ml/ensemble_price`,
+`/api/ml/volatility_forecast`), risk (`/api/risk_metrics`,
+`/api/risk/portfolio_risk`, `/api/risk/dynamic_hedging`,
+`/api/stress_test`), market data and analytics
+(`/api/market_data/<symbol>`, `/api/option_chain/<symbol>`,
+`/api/volatility_surface/<symbol>`, `/api/market/volatility_term_structure`,
+`/api/market/sentiment`), India market data
+(`/api/india/option_chain/<symbol>`, `/api/india_market_sentiment`,
+`/api/india/risk_free_rate`), and platform status (`/api/status`). Every
+endpoint returns JSON and is usable independently of the dashboard.
 
-- **Plotly Integration** for dynamic, responsive visualizations
-- **Real-time Market Dashboard** with live data feeds
-- **Options Chain Analysis** with implied volatility surfaces
-- **Payoff Diagrams** for complex option strategies
-- **Performance Attribution** and backtesting framework
-
-### 🇮🇳 **India Market (NSE/BSE) Support**
-
-- **NSE/BSE equity quotes** via yfinance (`.NS`/`.BO` symbol suffixes)
-- **Real NSE F&O option chains** for indices (NIFTY, BANKNIFTY) and individual
-  stocks, via [jugaad-data](https://github.com/jugaad-py/jugaad-data)
-- **Put/Call Ratio, Max Pain, and OI buildup** analytics with an interactive chart
-- **RBI policy rate + G-Sec yields** as an India risk-free-rate proxy
-- One-click **market switcher** (US / India-NSE / India-BSE) that swaps the
-  dashboard, currency formatting, and symbol handling
-
-### 🔬 **Model Validation & Testing**
-
-- **Cross-Validation** frameworks with time series splits
-- **Walk-Forward Analysis** for model performance
-- **Statistical Testing** (bias, normality, autocorrelation)
-- **Overfitting Detection** with comprehensive metrics
-- **Production Readiness Assessment** scoring system
-
----
-
-## 🏆 Technical Excellence & Metrics
-
-### **Performance Benchmarks**
-
-| Metric                 | Achievement                      | Industry Standard | Notes                        |
-| ---------------------- | --------------------------------- | ----------------- | ----------------------------- |
-| **Processing Speed**   | 5,000+ options/day                | 1,000-2,000/day   | **150-400%**                  |
-| **Model Accuracy**     | R² ≈ 0.999 (synthetic benchmark)  | R² = 0.85-0.90    | measured, see note below\*    |
-| **Variance Reduction** | ~0.4% (measured)                  | Standard MC        | modest, parameter-dependent   |
-| **Response Time**      | <2ms average                      | 5-10ms typical     | **60-80%** faster             |
-
-\*R² is measured on a synthetic, Black-Scholes-generated validation set (see [Model Validation](MODEL_VALIDATION_GUIDE.md)) — a benchmark of the modeling pipeline, not a claim about live market performance.
-
-### **Data Science Achievements**
-
-- 🎯 **Neural Network Excellence**: R² ≈ 0.999 on a 50,000-row synthetic option-pricing validation set
-- 🔄 **Monte Carlo Optimization**: Antithetic variates measured at ~0.4% standard-error reduction for the benchmarked scenario
-- 📈 **Ensemble Learning**: Neural network + random forest + XGBoost, each independently validated
-- 🧪 **Feature Engineering**: Option-type-aware feature set (moneyness, intrinsic value, time-decay terms, volatility transforms) — see [Model Validation](MODEL_VALIDATION_GUIDE.md)
-
-### **Software Architecture**
-
-- 🏗️ **Modular Design**: 6+ independent microservices
-- 🔌 **API-First**: 15+ RESTful endpoints with comprehensive error handling
-- 🌐 **Cloud Ready**: Vercel/Railway deployment with containerization
-- 📱 **Responsive UI**: Modern web interface with mobile support
-
----
-
-## 🚀 Quick Start Guide
+## Getting Started
 
 ### Prerequisites
 
-```bash
-Python 3.8+
-Node.js (for frontend dependencies)
-Git
-```
+- Python 3.8+
+- Git
 
-### Installation & Setup
+### Installation
 
 ```bash
-# Clone the repository
 git clone https://github.com/DIPESHGOEL27/option-pricing-models.git
 cd option-pricing-models
 
-# Install dependencies (use `python toggle_features.py full` first for ML features)
+# Full feature set (ML pricing, India market data, plotting):
+python toggle_features.py full
 pip install -r requirements.txt
 
-# Start the application
 python main.py
 ```
 
-### Access the Platform
-
-- **Local**: http://localhost:8000 after running `python main.py`
-- **Deployment**: see [DEPLOYMENT.md](DEPLOYMENT.md) for Railway/Docker/Vercel instructions
-
---
-
-## 🎯 Professional Skills Demonstrated
-
-### **Financial Engineering**
-
-- Option pricing model implementation and validation
-- Risk management methodologies and stress testing
-- Greeks calculation and sensitivity analysis
-- Volatility modeling and implied volatility extraction
-
-### **Data Science & Machine Learning**
-
-- Neural network architecture and training (50,000 synthetic records)
-- Ensemble methods and model combination techniques
-- Statistical validation and hypothesis testing
-- Feature engineering and selection
-
-### **Software Engineering**
-
-- RESTful API design and implementation
-- Modular architecture with microservices
-- Database integration and data persistence
-- Cloud deployment and containerization
-
-### **Quantitative Analysis**
-
-- Monte Carlo methods with variance reduction
-- Statistical modeling and time series analysis
-- Performance attribution and backtesting
-- Risk measurement and scenario analysis
-
----
-
-## 📈 Business Impact & Value
-
-### **Quantifiable Achievements**
-
-- **Processing capacity**: 5,000+ options per day
-- **Model accuracy**: R² ≈ 0.999 on a synthetic validation benchmark
-- **Performance optimization**: ~0.4% measured variance reduction from antithetic sampling
-
-### **Industry Applications**
-
-- **Trading Desks**: Real-time pricing and risk management
-- **Risk Management**: Portfolio hedging and scenario analysis
-- **Research**: Model validation and performance benchmarking
-- **Education**: Demonstration of quantitative finance concepts
-
----
-
-## 🔧 Technology Stack
-
-### **Backend**
-
-- **Python 3.8+**: Core language with advanced libraries
-- **Flask 2.0+**: RESTful API framework
-- **NumPy/SciPy**: Numerical computing and optimization
-- **Pandas**: Data manipulation and analysis
-- **Scikit-learn**: Machine learning models and validation
-
-### **Frontend**
-
-- **HTML5/CSS3**: Modern responsive web design
-- **JavaScript ES6+**: Interactive user interface
-- **Plotly.js**: Dynamic data visualization
-- **Bootstrap**: Professional UI components
-
-### **Data & Analytics**
-
-- **SQLite/PostgreSQL**: Data persistence
-- **Matplotlib/Seaborn**: Statistical plotting
-- **Joblib**: Model serialization and caching
-- **Threading**: Concurrent processing
-- **jugaad-data**: Free NSE/BSE option chains and RBI rates
-
-### **Deployment**
-
-- **Vercel/Railway**: Cloud hosting platforms
-- **Docker**: Containerization for scalability
-- **Git**: Version control and collaboration
-- **CI/CD**: Automated testing and deployment
-
----
-
-## 📊 Model Performance Metrics
-
-### **Neural Network Performance**
-
-- **Training R²**: ≈ 0.999 (measured)
-- **Validation R²**: ≈ 0.999 (measured, 10,000-row held-out split)
-- **Convergence**: ~70-120 iterations typical (early stopping)
-- **Full methodology and per-model breakdown**: see [Model Validation Guide](MODEL_VALIDATION_GUIDE.md)
-
-### **Monte Carlo Validation**
-
-- **Standard Error**: ~0.046 for 100,000 simulations (ATM call benchmark scenario)
-- **Antithetic Variance Reduction**: ~0.4% measured for the benchmarked scenario (varies by option parameters)
-- **Computational Efficiency**: sub-second for the benchmarked scenario
-
-### **Risk Model Accuracy**
-
-- **VaR Backtesting**: 95% coverage accuracy
-- **Expected Shortfall**: <5% estimation error
-- **Stress Test Reliability**: 99%+ scenario coverage
-- **Greeks Accuracy**: <0.1% deviation from analytical
-
----
-
-## 🎯 Highlights
-
-### **Data Science**
-
-• **Architected modular Flask application** with 7 independent feature modules processing 5,000+ daily option calculations
-
-• **Trained a neural network + random forest + XGBoost ensemble on 50,000 synthetically generated option-pricing records**, achieving R² ≈ 0.999 on held-out validation data after diagnosing and fixing a missing-feature bug in the training pipeline
-
-• **Implemented Monte Carlo simulation with antithetic variates**, measuring a ~0.4% standard-error reduction for the benchmarked scenario
-
-• **Built interactive Plotly dashboards** enabling real-time risk analysis and portfolio optimization
-
-• **Developed comprehensive model validation framework** with cross-validation, backtesting, and statistical testing
-
-### **Financial Engineering**
-
-• **Implemented Black-Scholes and advanced option pricing models** with comprehensive Greeks calculation
-
-• **Created risk management suite** featuring VaR, Expected Shortfall, and stress testing capabilities
-
-• **Designed automated hedging strategies** with real-time delta neutrality and portfolio rebalancing
-
-• **Built market data integration system** processing live feeds and volatility surface construction
-
-• **Developed performance attribution framework** with walk-forward analysis and model benchmarking
-
----
-
-## 📚 Documentation & Resources
-
-### **Project Documentation**
-
-- [Deployment Guide](DEPLOYMENT.md) - Railway, Docker, and Vercel setup instructions
-- [Model Validation](MODEL_VALIDATION_GUIDE.md) - Statistical testing and validation framework
-
-### **Technical Deep Dives**
-
-- [Folder Structure](FOLDER_STRUCTURE.md) - Project organization
-
----
-
-## 🔮 Future Enhancements
-
-### **Planned Features**
-
-- **Real-time Market Data**: Integration with Bloomberg/Reuters APIs
-- **Advanced Models**: Stochastic volatility and jump-diffusion models
-- **Portfolio Optimization**: Multi-objective optimization with constraints
-- **Machine Learning**: Deep reinforcement learning for trading strategies
-
-### **Performance Improvements**
-
-- **GPU Acceleration**: CUDA support for Monte Carlo simulations
-- **Distributed Computing**: Cluster-based parallel processing
-- **Caching System**: Redis integration for improved response times
-- **Database Optimization**: Time-series database for historical data
-
----
-
-## 🤝 Contributing & Contact
-
-### **Professional Contact**
-
-- **LinkedIn**: [[https://www.linkedin.com/in/dipeshgoel27/](https://www.linkedin.com/in/dipeshgoel27/)]
-- **Portfolio**: [https://dipeshgoel.vercel.app/](https://dipeshgoel.vercel.app/)
-
-### **Contributing**
-
-This project demonstrates professional-level financial engineering and data science capabilities. Feel free to explore the codebase, review the implementation, and reach out for discussions about quantitative finance, machine learning, or software engineering opportunities.
-
----
-
-## 📄 License & Acknowledgments
-
-### **License**
-
-MIT License - See [LICENSE](LICENSE) file for details
-
-### **Acknowledgments**
-
-- **Financial Models**: Based on established quantitative finance literature
-- **Machine Learning**: Leveraging scikit-learn and modern ML practices
-- **Visualization**: Powered by Plotly for interactive analytics
-- **Framework**: Built with Flask for production-ready deployment
-
----
-
-_This platform represents a comprehensive demonstration of financial engineering, data science, and software development skills suitable for quantitative finance, data science, and financial technology roles. The codebase showcases industry best practices, advanced mathematical modeling, and professional software architecture._
-
----
-
-Built with ❤️ by Dipesh Goel
+The dashboard is then available at `http://localhost:8000`.
+
+For a lighter install without ML dependencies (Black-Scholes, Binomial, and
+Monte Carlo pricing only), use `python toggle_features.py light` instead.
+See [DEPLOYMENT.md](DEPLOYMENT.md) for Railway, Docker, and Vercel
+deployment instructions, including which features are available in each
+environment.
+
+## Known Limitations
+
+- The ML pricing ensemble is trained on synthetically generated data and
+  is not fit to real market option prices; it is a modeling and validation
+  exercise, not a trading signal.
+- The Vercel deployment configuration excludes `scikit-learn` and
+  `xgboost` to stay under the serverless size limit, so ML pricing
+  endpoints are unavailable there — use Railway or Docker for the full
+  feature set.
+- `jugaad-data` scrapes an unofficial NSE endpoint; it can be slower or
+  intermittently unavailable compared to a paid market-data feed, and its
+  first request after an idle period is slower due to session bootstrap.
+- BSE has no free, working options-chain data source; the dashboard shows
+  this explicitly instead of returning empty or fabricated data.
+- The hedging endpoint's transaction cost is a disclosed, fixed assumption
+  (0.2% of hedge notional), not a live bid-ask spread, since no live quote
+  feed is queried for the hedge instrument.
+- The bundled Flask development server (`python main.py`) is not a
+  production WSGI server; deployments use Gunicorn (see
+  [DEPLOYMENT.md](DEPLOYMENT.md)).
+
+## Documentation
+
+- [DEPLOYMENT.md](DEPLOYMENT.md) — Railway, Docker, and Vercel deployment
+- [MODEL_VALIDATION_GUIDE.md](MODEL_VALIDATION_GUIDE.md) — validation
+  methodology and real, measured results
+- [FOLDER_STRUCTURE.md](FOLDER_STRUCTURE.md) — project layout
+
+## License
+
+MIT License — see [LICENSE](LICENSE).
+
+## Author
+
+Dipesh Goel — [LinkedIn](https://www.linkedin.com/in/dipeshgoel27/) —
+[Portfolio](https://dipeshgoel.vercel.app/)

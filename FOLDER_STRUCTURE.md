@@ -43,8 +43,7 @@ Option_Pricing_Models/
     ├── model_validation.py         # Model validation and backtesting
     │
     │   # Market data
-    ├── market_data.py              # Live quotes, option chains, historical volatility (US, via yfinance)
-    ├── market_data_advanced.py     # Volatility surfaces, sentiment indicators
+    ├── market_data.py              # Live quotes, option chains, historical volatility, sentiment (US, via yfinance)
     ├── india_market_data.py        # NSE/BSE option chains, PCR, max pain, RBI rates (via jugaad-data)
     │
     │   # Frontend
