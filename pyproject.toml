@@ -1,0 +1,11 @@
+[tool.ruff.lint]
+# Explicit rule selection so CI and local runs agree regardless of which
+# ruff version resolves -- a fresh `pip install ruff` in CI picked up a
+# newer default rule set than the version this project was developed
+# against, and CI failed on rule categories (RUF059, DTZ005, EXE001,
+# FURB122, I001 -- unpacked-variable, timezone-naive datetime, shebang
+# permissions, loop-based file writes, import sorting) that were never
+# checked locally. Pinning the selection to the same
+# pycodestyle-errors + pyflakes set this project was actually written
+# against removes that version-drift surprise.
+select = ["E4", "E7", "E9", "F"]
