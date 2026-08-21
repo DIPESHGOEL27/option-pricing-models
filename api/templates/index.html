@@ -3,1240 +3,174 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Advanced Option Pricing Platform</title>
-    <link
-      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
-      rel="stylesheet"
+    <title>NSE Options Terminal</title>
+    <meta
+      name="description"
+      content="Live NSE F&O option chain analytics: implied volatility solved from real market quotes, model-vs-market fair value, and volatility skew."
     />
-    <link
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
-      rel="stylesheet"
-    />
-    <link
-      href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"
-      rel="stylesheet"
-    />
-    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-    <link
-      rel="stylesheet"
-      href="{{ url_for('static', filename='styles.css') }}"
-    />
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" defer></script>
   </head>
   <body>
-    <!-- Enhanced Navigation -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
-      <div class="container-fluid">
-        <a class="navbar-brand" href="#">
-          <i class="fas fa-chart-line me-2"></i>
-          Advanced Options Platform
-        </a>
-        <button
-          class="navbar-toggler"
-          type="button"
-          data-bs-toggle="collapse"
-          data-bs-target="#navbarNav"
-          aria-controls="navbarNav"
-          aria-expanded="false"
-          aria-label="Toggle navigation"
-        >
-          <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse" id="navbarNav">
-          <ul class="navbar-nav ms-auto">
-            <li class="nav-item">
-              <span class="navbar-text me-3" id="marketStatus">
-                <span class="status-indicator status-online"></span> Market Open
-              </span>
-            </li>
-
-            <li class="nav-item">
-              <span class="navbar-text" id="lastUpdate">
-                <i class="fas fa-sync-alt me-1"></i> Updated: Just now
-              </span>
-            </li>
-          </ul>
+    <div class="app-shell">
+      <header class="app-header">
+        <div class="brand">
+          <span class="brand-name">NSE Options Terminal</span>
+          <span class="brand-tag">live F&amp;O chain analytics</span>
         </div>
+
+        <div class="header-controls">
+          <label class="visually-hidden" for="instrumentSelect">Instrument</label>
+          <select id="instrumentSelect" class="select" aria-label="Instrument">
+            <option value="NIFTY">NIFTY</option>
+            <option value="BANKNIFTY">BANKNIFTY</option>
+            <option value="FINNIFTY">FINNIFTY</option>
+            <option value="RELIANCE">RELIANCE</option>
+            <option value="TCS">TCS</option>
+            <option value="HDFCBANK">HDFCBANK</option>
+            <option value="INFY">INFY</option>
+          </select>
+
+          <label class="visually-hidden" for="expirySelect">Expiry</label>
+          <select id="expirySelect" class="select" aria-label="Expiry">
+            <option value="">Nearest expiry</option>
+          </select>
+
+          <button id="refreshBtn" class="btn" type="button" title="Refresh chain">
+            &#8635; Refresh
+          </button>
+        </div>
+
+        <div class="header-readout">
+          <span id="spotPrice" class="spot-price num">&ndash;</span>
+          <span id="spotChange" class="spot-change num"></span>
+          <span class="market-status">
+            <span id="marketStatusDot" class="status-dot unknown"></span>
+            <span id="marketStatusText">Checking market status&hellip;</span>
+          </span>
+          <span id="asOf" class="as-of">&ndash;</span>
+        </div>
+      </header>
+
+      <main class="app-main">
+        <div id="onboardingStrip" class="onboarding-strip">
+          <span>
+            <strong>What this is:</strong> live NSE option-chain data, with implied volatility
+            solved independently from real bid/ask quotes and compared against NSE's own
+            published figure &mdash; so you can see where the chain looks rich or cheap relative
+            to its own smile, not just what the exchange displays.
+          </span>
+          <button id="howToReadBtn" type="button">How to read this</button>
+          <button class="dismiss" type="button" id="dismissOnboarding" aria-label="Dismiss">&times;</button>
+        </div>
+
+        <div id="staleBanner" class="stale-banner" hidden>
+          <span>&#9888;</span>
+          <span id="staleBannerText">Showing cached data &mdash; live refresh failed.</span>
+        </div>
+
+        <div class="workspace">
+          <section class="panel" aria-labelledby="chainHeading">
+            <div class="panel-header">
+              <h2 id="chainHeading" class="panel-title">Option Chain</h2>
+              <span id="chainSubtitle" class="stat-sub"></span>
+            </div>
+            <div class="panel-body flush">
+              <div id="chainContainer" class="chain-scroll">
+                <div class="state-block">
+                  <div class="spinner"></div>
+                  <span>Loading live chain&hellip;</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <div class="side-stack">
+            <section class="panel" aria-labelledby="statsHeading">
+              <div class="panel-header">
+                <h2 id="statsHeading" class="panel-title">Chain Summary</h2>
+              </div>
+              <div class="panel-body">
+                <div id="statGrid" class="stat-grid">
+                  <div class="stat-tile">
+                    <span class="stat-label">PCR (OI)</span>
+                    <span id="statPcr" class="stat-value num">&ndash;</span>
+                  </div>
+                  <div class="stat-tile">
+                    <span class="stat-label">Max Pain</span>
+                    <span id="statMaxPain" class="stat-value num">&ndash;</span>
+                  </div>
+                  <div class="stat-tile">
+                    <span class="stat-label">ATM IV</span>
+                    <span id="statAtmIv" class="stat-value num">&ndash;</span>
+                  </div>
+                  <div class="stat-tile">
+                    <span class="stat-label">Risk-free Rate</span>
+                    <span id="statRate" class="stat-value num">&ndash;</span>
+                    <span id="statRateSource" class="stat-sub"></span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel" aria-labelledby="skewHeading">
+              <div class="panel-header">
+                <h2 id="skewHeading" class="panel-title">Volatility Skew</h2>
+                <span class="info-dot" tabindex="0">?
+                  <span class="tooltip-content">
+                    Solved implied volatility plotted against strike. The curve is fit only from
+                    liquid, out-of-the-money quotes -- deep ITM legs and very low-premium far-OTM
+                    legs are excluded as unreliable.
+                  </span>
+                </span>
+              </div>
+              <div class="panel-body">
+                <div id="skewChart" style="min-height: 220px;"></div>
+              </div>
+            </section>
+
+            <section class="panel" aria-labelledby="oiHeading">
+              <div class="panel-header">
+                <h2 id="oiHeading" class="panel-title">Open Interest Buildup</h2>
+              </div>
+              <div class="panel-body">
+                <div id="oiChart" style="min-height: 220px;"></div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <div id="positionDrawer" class="drawer" aria-hidden="true">
+      <div class="drawer-header">
+        <h2 id="drawerTitle" class="panel-title">Position</h2>
+        <button class="drawer-close" id="drawerCloseBtn" type="button" aria-label="Close">&times;</button>
       </div>
-    </nav>
-
-    <!-- Main Container -->
-    <div class="container-fluid mt-5 pt-3">
-      <!-- Market Sentiment Dashboard -->
-      <div class="row mb-4">
-        <div class="col-12">
-          <div class="card bg-dark">
-            <div class="card-header">
-              <h5 class="mb-0">
-                <i class="fas fa-tachometer-alt me-2"></i>Market Dashboard
-              </h5>
-            </div>
-            <div class="card-body">
-              <div class="row" id="marketDashboard">
-                <div class="col-md-3">
-                  <div class="text-center">
-                    <h6 class="text-muted" id="vixLabel">VIX</h6>
-                    <h4 id="vixLevel" class="text-warning">--</h4>
-                    <small id="vixSentiment" class="text-muted"
-                      >Loading...</small
-                    >
-                  </div>
-                </div>
-                <div class="col-md-3">
-                  <div class="text-center">
-                    <h6 class="text-muted" id="putCallLabel">Put/Call Ratio</h6>
-                    <h4 id="putCallRatio" class="text-info">--</h4>
-                    <small id="putCallSentiment" class="text-muted"
-                      >Loading...</small
-                    >
-                  </div>
-                </div>
-                <div class="col-md-3">
-                  <div class="text-center">
-                    <h6 class="text-muted" id="treasuryLabel">10Y Treasury</h6>
-                    <h4 id="treasury10Y" class="text-success">--</h4>
-                    <small class="text-muted">Risk-free Rate</small>
-                  </div>
-                </div>
-                <div class="col-md-3">
-                  <div class="text-center">
-                    <h6 class="text-muted">Fear & Greed</h6>
-                    <h4 id="fearGreedScore" class="text-primary">--</h4>
-                    <small class="text-muted">Market Sentiment</small>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+      <div class="drawer-body">
+        <div>
+          <h3 class="panel-title" style="margin-bottom: var(--space-3);">Payoff at Expiry</h3>
+          <div id="payoffChart" style="min-height: 260px;"></div>
         </div>
-      </div>
-
-      <!-- Main Content -->
-      <div class="row">
-        <!-- Left Sidebar - Controls -->
-        <div class="col-lg-3">
-          <div class="card bg-dark mb-4">
-            <div class="card-header">
-              <h6 class="mb-0">
-                <i class="fas fa-cogs me-2"></i>Pricing Models
-              </h6>
-            </div>
-            <div class="card-body">
-              <div
-                class="nav nav-pills flex-column"
-                id="v-pills-tab"
-                role="tablist"
-              >
-                <button
-                  class="nav-link active mb-2"
-                  id="basic-tab"
-                  data-bs-toggle="pill"
-                  data-bs-target="#basic-panel"
-                  role="tab"
-                  aria-selected="true"
-                  aria-controls="basic-panel"
-                >
-                  <i class="fas fa-calculator me-2"></i>Basic Models
-                </button>
-                <button
-                  class="nav-link mb-2"
-                  id="advanced-tab"
-                  data-bs-toggle="pill"
-                  data-bs-target="#advanced-panel"
-                  role="tab"
-                  aria-selected="false"
-                  aria-controls="advanced-panel"
-                >
-                  <i class="fas fa-rocket me-2"></i>Advanced Models
-                </button>
-
-                <button
-                  class="nav-link mb-2"
-                  id="risk-tab"
-                  data-bs-toggle="pill"
-                  data-bs-target="#risk-panel"
-                  role="tab"
-                  aria-selected="false"
-                  aria-controls="risk-panel"
-                >
-                  <i class="fas fa-shield-alt me-2"></i>Risk Management
-                </button>
-                <button
-                  class="nav-link"
-                  id="analysis-tab"
-                  data-bs-toggle="pill"
-                  data-bs-target="#analysis-panel"
-                  role="tab"
-                  aria-selected="false"
-                  aria-controls="analysis-panel"
-                >
-                  <i class="fas fa-chart-area me-2"></i>Analysis
-                </button>
-                <button
-                  class="nav-link"
-                  id="india-options-tab"
-                  data-bs-toggle="pill"
-                  data-bs-target="#india-options-panel"
-                  role="tab"
-                  aria-selected="false"
-                  aria-controls="india-options-panel"
-                  style="display: none"
-                >
-                  <i class="fas fa-rupee-sign me-2"></i>NSE Options
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Quick Market Data -->
-          <div class="card bg-dark">
-            <div class="card-header">
-              <h6 class="mb-0">
-                <i class="fas fa-search me-2"></i>Market Data
-              </h6>
-            </div>
-            <div class="card-body">
-              <div class="mb-3">
-                <label class="form-label" for="marketSelector">Market</label>
-                <select class="form-select" id="marketSelector">
-                  <option value="us">US Markets</option>
-                  <option value="india_nse">India - NSE</option>
-                  <option value="india_bse">India - BSE</option>
-                </select>
-              </div>
-              <div class="input-group mb-3">
-                <input
-                  type="text"
-                  class="form-control"
-                  id="symbolInput"
-                  placeholder="Symbol (e.g., AAPL)"
-                  list="indiaSymbols"
-                />
-                <button
-                  class="btn btn-primary"
-                  id="getDataBtn"
-                  aria-label="Look up symbol"
-                >
-                  <i class="fas fa-search"></i>
-                </button>
-              </div>
-              <datalist id="indiaSymbols">
-                <option value="RELIANCE"></option>
-                <option value="TCS"></option>
-                <option value="HDFCBANK"></option>
-                <option value="INFY"></option>
-                <option value="NIFTY"></option>
-                <option value="BANKNIFTY"></option>
-              </datalist>
-              <div id="symbolData" class="d-none">
-                <table class="table table-sm table-dark">
-                  <tbody id="symbolDataTable"></tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Main Content Area -->
-        <div class="col-lg-9">
-          <div class="tab-content" id="v-pills-tabContent">
-            <!-- Basic Models Panel -->
-            <div
-              class="tab-pane fade show active"
-              id="basic-panel"
-              role="tabpanel"
-              aria-labelledby="basic-tab"
-            >
-              <div class="card bg-dark">
-                <div class="card-header">
-                  <h5 class="mb-0">Black-Scholes & Binomial Models</h5>
-                </div>
-                <div class="card-body">
-                  <div class="row">
-                    <div class="col-md-6">
-                      <form id="basicForm">
-                        <div class="row">
-                          <div class="col-md-6 mb-3">
-                            <label class="form-label"
-                              >Underlying Price (S)</label
-                            >
-                            <input
-                              type="number"
-                              class="form-control"
-                              id="S"
-                              value="100"
-                              step="0.01"
-                            />
-                          </div>
-                          <div class="col-md-6 mb-3">
-                            <label class="form-label">Strike Price (K)</label>
-                            <input
-                              type="number"
-                              class="form-control"
-                              id="K"
-                              value="100"
-                              step="0.01"
-                            />
-                          </div>
-                        </div>
-                        <div class="row">
-                          <div class="col-md-6 mb-3">
-                            <label class="form-label">Time to Expiry (T)</label>
-                            <input
-                              type="number"
-                              class="form-control"
-                              id="T"
-                              value="0.25"
-                              step="0.01"
-                            />
-                          </div>
-                          <div class="col-md-6 mb-3">
-                            <label class="form-label">Risk-free Rate (r)</label>
-                            <input
-                              type="number"
-                              class="form-control"
-                              id="r"
-                              value="0.05"
-                              step="0.001"
-                            />
-                          </div>
-                        </div>
-                        <div class="row">
-                          <div class="col-md-6 mb-3">
-                            <label class="form-label">Volatility (σ)</label>
-                            <input
-                              type="number"
-                              class="form-control"
-                              id="sigma"
-                              value="0.2"
-                              step="0.01"
-                            />
-                          </div>
-                          <div class="col-md-6 mb-3">
-                            <label class="form-label">Option Type</label>
-                            <select class="form-select" id="optionType">
-                              <option value="call">Call</option>
-                              <option value="put">Put</option>
-                            </select>
-                          </div>
-                        </div>
-                        <div
-                          class="row"
-                          id="binomialParams"
-                          style="display: none"
-                        >
-                          <div class="col-md-6 mb-3">
-                            <label class="form-label">Steps</label>
-                            <input
-                              type="number"
-                              class="form-control"
-                              id="steps"
-                              value="100"
-                            />
-                          </div>
-                        </div>
-                        <div class="btn-group model-btn-group w-100 mb-3">
-                          <button
-                            type="button"
-                            class="btn model-btn active"
-                            id="blackScholesBtn"
-                            data-model="black_scholes"
-                          >
-                            <i class="fas fa-calculator me-2"></i>Black-Scholes
-                          </button>
-                          <button
-                            type="button"
-                            class="btn model-btn inactive"
-                            id="binomialBtn"
-                            data-model="binomial"
-                          >
-                            <i class="fas fa-sitemap me-2"></i>Binomial
-                          </button>
-                        </div>
-                      </form>
-                    </div>
-                    <div class="col-md-6">
-                      <div id="basicResults">
-                        <div class="alert alert-info">
-                          <i class="fas fa-info-circle me-2"></i>
-                          Enter parameters and select a model to see pricing
-                          results.
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Advanced Models Panel -->
-            <div
-              class="tab-pane fade"
-              id="advanced-panel"
-              role="tabpanel"
-              aria-labelledby="advanced-tab"
-            >
-              <div class="row">
-                <!-- Machine Learning Section -->
-                <div class="col-md-6 mb-4">
-                  <div class="card bg-dark">
-                    <div class="card-header">
-                      <h5 class="mb-0">
-                        <i class="fas fa-brain me-2"></i>Machine Learning
-                        Pricing
-                      </h5>
-                    </div>
-                    <div class="card-body">
-                      <form id="mlPricingForm">
-                        <div class="row">
-                          <div class="col-md-6 mb-3">
-                            <label class="form-label">Spot Price</label>
-                            <input
-                              type="number"
-                              class="form-control"
-                              id="mlS"
-                              value="100"
-                              step="0.01"
-                            />
-                          </div>
-                          <div class="col-md-6 mb-3">
-                            <label class="form-label">Strike Price</label>
-                            <input
-                              type="number"
-                              class="form-control"
-                              id="mlK"
-                              value="105"
-                              step="0.01"
-                            />
-                          </div>
-                        </div>
-                        <div class="row">
-                          <div class="col-md-6 mb-3">
-                            <label class="form-label">Time to Expiry</label>
-                            <input
-                              type="number"
-                              class="form-control"
-                              id="mlT"
-                              value="0.25"
-                              step="0.01"
-                            />
-                          </div>
-                          <div class="col-md-6 mb-3">
-                            <label class="form-label">Volatility</label>
-                            <input
-                              type="number"
-                              class="form-control"
-                              id="mlSigma"
-                              value="0.2"
-                              step="0.01"
-                            />
-                          </div>
-                        </div>
-                        <div class="row">
-                          <div class="col-md-6 mb-3">
-                            <label class="form-label">Risk-free Rate</label>
-                            <input
-                              type="number"
-                              class="form-control"
-                              id="mlR"
-                              value="0.05"
-                              step="0.001"
-                            />
-                          </div>
-                          <div class="col-md-6 mb-3">
-                            <label class="form-label">Option Type</label>
-                            <select class="form-select" id="mlOptionType">
-                              <option value="call">Call</option>
-                              <option value="put">Put</option>
-                            </select>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          class="btn btn-gradient-primary w-100"
-                          id="mlPriceBtn"
-                        >
-                          <i class="fas fa-robot me-2"></i>Get ML Price
-                        </button>
-                      </form>
-                      <div id="mlResults" class="mt-3" style="display: none">
-                        <div class="alert alert-info">
-                          <strong>ML Pricing Results:</strong>
-                          <div id="mlPriceComparison"></div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="row">
-                <!-- Risk Management Section -->
-                <div class="col-md-6 mb-4">
-                  <div class="card bg-dark">
-                    <div class="card-header">
-                      <h5 class="mb-0">
-                        <i class="fas fa-shield-alt me-2"></i>Risk Management
-                      </h5>
-                    </div>
-                    <div class="card-body">
-                      <form id="riskForm">
-                        <div class="row">
-                          <div class="col-md-6 mb-3">
-                            <label class="form-label">Position Value ($)</label>
-                            <input
-                              type="number"
-                              class="form-control"
-                              id="riskPositionValue"
-                              value="1000000"
-                              step="1000"
-                            />
-                          </div>
-                          <div class="col-md-6 mb-3">
-                            <label class="form-label"
-                              >Confidence Level (%)</label
-                            >
-                            <input
-                              type="number"
-                              class="form-control"
-                              id="riskConfidence"
-                              value="95"
-                              step="1"
-                              min="90"
-                              max="99"
-                            />
-                          </div>
-                        </div>
-                        <div class="row">
-                          <div class="col-md-6 mb-3">
-                            <label class="form-label"
-                              >Time Horizon (days)</label
-                            >
-                            <input
-                              type="number"
-                              class="form-control"
-                              id="riskHorizon"
-                              value="1"
-                              step="1"
-                              min="1"
-                            />
-                          </div>
-                          <div class="col-md-6 mb-3">
-                            <label class="form-label">Position Delta</label>
-                            <input
-                              type="number"
-                              class="form-control"
-                              id="positionDelta"
-                              value="0.5"
-                              step="0.1"
-                            />
-                          </div>
-                        </div>
-                        <div class="btn-group w-100 mb-3">
-                          <button
-                            type="button"
-                            class="btn btn-warning"
-                            id="riskAnalysisBtn"
-                          >
-                            <i class="fas fa-exclamation-triangle me-2"></i>Risk
-                            Analysis
-                          </button>
-                          <button
-                            type="button"
-                            class="btn btn-info"
-                            id="hedgingBtn"
-                          >
-                            <i class="fas fa-balance-scale me-2"></i>Hedging
-                          </button>
-                        </div>
-                      </form>
-                      <div id="riskResults" class="mt-3" style="display: none">
-                        <div class="alert alert-warning">
-                          <strong>Risk Metrics:</strong>
-                          <div id="riskMetricsDisplay"></div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Market Sentiment Section -->
-                <div class="col-md-6 mb-4">
-                  <div class="card bg-dark">
-                    <div class="card-header">
-                      <h5 class="mb-0">
-                        <i class="fas fa-chart-pie me-2"></i>Market Sentiment
-                      </h5>
-                    </div>
-                    <div class="card-body">
-                      <form id="sentimentForm">
-                        <div class="mb-3">
-                          <label class="form-label">Symbol</label>
-                          <input
-                            type="text"
-                            class="form-control"
-                            id="sentimentSymbol"
-                            value="SPY"
-                            placeholder="SPY"
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          class="btn btn-gradient-info w-100"
-                          id="sentimentBtn"
-                        >
-                          <i class="fas fa-heartbeat me-2"></i>Get Market
-                          Sentiment
-                        </button>
-                      </form>
-                      <div
-                        id="sentimentResults"
-                        class="mt-3"
-                        style="display: none"
-                      >
-                        <div class="row text-center">
-                          <div class="col-6">
-                            <h6 class="text-muted">Fear & Greed</h6>
-                            <h4 id="fearGreedIndex" class="text-warning">--</h4>
-                          </div>
-                          <div class="col-6">
-                            <h6 class="text-muted">VIX Level</h6>
-                            <h4 id="sentimentVix" class="text-danger">--</h4>
-                          </div>
-                        </div>
-                        <div class="row text-center mt-3">
-                          <div class="col-6">
-                            <h6 class="text-muted">Put/Call Ratio</h6>
-                            <h4 id="sentimentPutCallRatio" class="text-info">--</h4>
-                          </div>
-                          <div class="col-6">
-                            <h6 class="text-muted">Overall Sentiment</h6>
-                            <h4 id="overallSentiment" class="text-success">
-                              --
-                            </h4>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="row">
-                <!-- Advanced Monte Carlo Models -->
-                <div class="col-md-12 mb-4">
-                  <div class="card bg-dark">
-                    <div class="card-header">
-                      <h5 class="mb-0">
-                        <i class="fas fa-wave-square me-2"></i>Advanced Monte
-                        Carlo Models
-                      </h5>
-                    </div>
-                    <div class="card-body">
-                      <p class="text-muted small">
-                        Uses Spot/Strike/Time/Rate/Volatility/Option Type
-                        from the Basic Models tab. Pick a stochastic model
-                        below.
-                      </p>
-                      <div class="row">
-                        <div class="col-md-4 mb-3">
-                          <label class="form-label" for="modelType">Model</label>
-                          <select class="form-select" id="modelType">
-                            <option value="gbm">
-                              Geometric Brownian Motion
-                            </option>
-                            <option value="heston">
-                              Heston (Stochastic Volatility)
-                            </option>
-                            <option value="jump_diffusion">
-                              Merton Jump-Diffusion
-                            </option>
-                          </select>
-                        </div>
-                        <div class="col-md-4 mb-3">
-                          <label class="form-label" for="simulations"
-                            >Simulations</label
-                          >
-                          <input
-                            type="number"
-                            class="form-control"
-                            id="simulations"
-                            value="100000"
-                            step="10000"
-                            min="1000"
-                          />
-                        </div>
-                        <div class="col-md-4 mb-3 d-flex align-items-end">
-                          <button
-                            type="button"
-                            class="btn btn-gradient-primary w-100"
-                            id="calculateAdvanced"
-                          >
-                            <i class="fas fa-play me-2"></i>Run Simulation
-                          </button>
-                        </div>
-                      </div>
-
-                      <div id="hestonParams" class="row" style="display: none">
-                        <div class="col-md-3 mb-3">
-                          <label class="form-label" for="kappa"
-                            >Mean Reversion (κ)</label
-                          >
-                          <input
-                            type="number"
-                            class="form-control"
-                            id="kappa"
-                            value="2.0"
-                            step="0.1"
-                          />
-                        </div>
-                        <div class="col-md-3 mb-3">
-                          <label class="form-label" for="theta"
-                            >Long-run Variance (θ)</label
-                          >
-                          <input
-                            type="number"
-                            class="form-control"
-                            id="theta"
-                            value="0.04"
-                            step="0.01"
-                          />
-                        </div>
-                        <div class="col-md-3 mb-3">
-                          <label class="form-label" for="sigma_v"
-                            >Vol of Vol (σᵥ)</label
-                          >
-                          <input
-                            type="number"
-                            class="form-control"
-                            id="sigma_v"
-                            value="0.3"
-                            step="0.01"
-                          />
-                        </div>
-                        <div class="col-md-3 mb-3">
-                          <label class="form-label" for="rho"
-                            >Correlation (ρ)</label
-                          >
-                          <input
-                            type="number"
-                            class="form-control"
-                            id="rho"
-                            value="-0.5"
-                            step="0.05"
-                            min="-1"
-                            max="1"
-                          />
-                        </div>
-                      </div>
-
-                      <div id="jumpParams" class="row" style="display: none">
-                        <div class="col-md-4 mb-3">
-                          <label class="form-label" for="lambda"
-                            >Jump Intensity (λ)</label
-                          >
-                          <input
-                            type="number"
-                            class="form-control"
-                            id="lambda"
-                            value="0.1"
-                            step="0.01"
-                          />
-                        </div>
-                        <div class="col-md-4 mb-3">
-                          <label class="form-label" for="mu_j"
-                            >Mean Jump Size (μⱼ)</label
-                          >
-                          <input
-                            type="number"
-                            class="form-control"
-                            id="mu_j"
-                            value="-0.1"
-                            step="0.01"
-                          />
-                        </div>
-                        <div class="col-md-4 mb-3">
-                          <label class="form-label" for="sigma_j"
-                            >Jump Volatility (σⱼ)</label
-                          >
-                          <input
-                            type="number"
-                            class="form-control"
-                            id="sigma_j"
-                            value="0.2"
-                            step="0.01"
-                          />
-                        </div>
-                      </div>
-
-                      <div id="advancedResults" class="mt-3"></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Risk Management Panel -->
-            <div
-              class="tab-pane fade"
-              id="risk-panel"
-              role="tabpanel"
-              aria-labelledby="risk-tab"
-            >
-              <div class="card bg-dark">
-                <div class="card-header">
-                  <h5 class="mb-0">Risk Management & Stress Testing</h5>
-                </div>
-                <div class="card-body">
-                  <div class="row">
-                    <div class="col-md-6">
-                      <h6>Stress Test Scenarios</h6>
-                      <div class="btn-group-vertical w-100 mb-3">
-                        <button
-                          class="btn btn-outline-danger"
-                          id="marketCrashBtn"
-                        >
-                          <i class="fas fa-exclamation-triangle me-2"></i>Market
-                          Crash (-30%)
-                        </button>
-                        <button
-                          class="btn btn-outline-warning"
-                          id="volSpikeBtn"
-                        >
-                          <i class="fas fa-chart-line me-2"></i>Volatility Spike
-                          (+50%)
-                        </button>
-                        <button class="btn btn-outline-info" id="rateShockBtn">
-                          <i class="fas fa-percentage me-2"></i>Rate Shock
-                          (+200bp)
-                        </button>
-                        <button
-                          class="btn btn-outline-light"
-                          id="customStressBtn"
-                        >
-                          <i class="fas fa-cog me-2"></i>Custom Scenario
-                        </button>
-                      </div>
-
-                      <h6>Model Validation</h6>
-                      <button
-                        class="btn btn-primary w-100"
-                        id="validateModelsBtn"
-                      >
-                        <i class="fas fa-check-circle me-2"></i>Validate Pricing
-                        Models
-                      </button>
-                    </div>
-                    <div class="col-md-6">
-                      <div id="stressResults">
-                        <div class="alert alert-info">
-                          <i class="fas fa-info-circle me-2"></i>
-                          Select a stress test scenario to see impact analysis.
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Analysis Panel -->
-            <div
-              class="tab-pane fade"
-              id="analysis-panel"
-              role="tabpanel"
-              aria-labelledby="analysis-tab"
-            >
-              <div class="card bg-dark">
-                <div class="card-header">
-                  <h5 class="mb-0">Advanced Analytics & Visualization</h5>
-                </div>
-                <div class="card-body">
-                  <div class="row mb-3">
-                    <div class="col-md-12">
-                      <div class="card bg-secondary bg-opacity-10 border-secondary mb-3">
-                        <div
-                          class="card-header d-flex justify-content-between align-items-center"
-                        >
-                          <h6 class="mb-0">Portfolio Positions</h6>
-                          <button
-                            class="btn btn-sm btn-primary"
-                            id="addPositionBtn"
-                          >
-                            <i class="fas fa-plus me-1"></i>Add Position
-                          </button>
-                        </div>
-                        <div class="card-body">
-                          <div class="table-responsive">
-                            <table
-                              class="table table-dark table-sm mb-3"
-                              id="portfolioTable"
-                            >
-                              <thead>
-                                <tr>
-                                  <th>Symbol</th>
-                                  <th>Type</th>
-                                  <th>Strike</th>
-                                  <th>Qty</th>
-                                  <th>Value</th>
-                                  <th>P&amp;L</th>
-                                  <th></th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                <tr>
-                                  <td colspan="7" class="text-center text-muted">
-                                    No positions in portfolio
-                                  </td>
-                                </tr>
-                              </tbody>
-                            </table>
-                          </div>
-                          <div class="row text-center">
-                            <div class="col-6 col-md-2">
-                              <small class="text-muted d-block">Total Value</small>
-                              <strong id="totalValue">$0.00</strong>
-                            </div>
-                            <div class="col-6 col-md-2">
-                              <small class="text-muted d-block">Total P&amp;L</small>
-                              <strong id="totalPnL">$0.00</strong>
-                            </div>
-                            <div class="col-6 col-md-2">
-                              <small class="text-muted d-block">Delta</small>
-                              <strong id="portfolioDelta">0.00</strong>
-                            </div>
-                            <div class="col-6 col-md-2">
-                              <small class="text-muted d-block">Gamma</small>
-                              <strong id="portfolioGamma">0.00</strong>
-                            </div>
-                            <div class="col-6 col-md-2">
-                              <small class="text-muted d-block">Theta</small>
-                              <strong id="portfolioTheta">$0.00</strong>
-                            </div>
-                            <div class="col-6 col-md-2">
-                              <small class="text-muted d-block">Vega</small>
-                              <strong id="portfolioVega">0.00</strong>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      <div class="btn-group w-100">
-                        <button
-                          class="btn btn-outline-primary"
-                          id="payoffDiagramBtn"
-                        >
-                          <i class="fas fa-chart-area me-2"></i>Payoff Diagram
-                        </button>
-                        <button
-                          class="btn btn-outline-success"
-                          id="volatilitySmileBtn"
-                        >
-                          <i class="fas fa-smile me-2"></i>Volatility Smile
-                        </button>
-                        <button
-                          class="btn btn-outline-warning"
-                          id="greeksSensitivityBtn"
-                        >
-                          <i class="fas fa-sliders-h me-2"></i>Greeks
-                          Sensitivity
-                        </button>
-                        <button
-                          class="btn btn-outline-info"
-                          id="convergenceBtn"
-                        >
-                          <i class="fas fa-arrows-alt-h me-2"></i>MC Convergence
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="row">
-                    <div class="col-md-12">
-                      <div id="analysisPlot" style="height: 500px">
-                        <div
-                          class="d-flex align-items-center justify-content-center h-100"
-                        >
-                          <div class="text-center text-muted">
-                            <i class="fas fa-chart-bar fa-3x mb-3"></i>
-                            <p>
-                              Select an analysis type to display interactive
-                              charts
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- India (NSE) Options Panel -->
-            <div
-              class="tab-pane fade"
-              id="india-options-panel"
-              role="tabpanel"
-              aria-labelledby="india-options-tab"
-            >
-              <div class="card bg-dark">
-                <div class="card-header">
-                  <h5 class="mb-0">NSE Option Chain Analytics</h5>
-                </div>
-                <div class="card-body">
-                  <div class="row g-3 mb-3">
-                    <div class="col-md-4">
-                      <label class="form-label" for="indiaOptionSymbol"
-                        >Symbol</label
-                      >
-                      <input
-                        type="text"
-                        class="form-control"
-                        id="indiaOptionSymbol"
-                        value="NIFTY"
-                        list="indiaSymbols"
-                      />
-                    </div>
-                    <div class="col-md-4">
-                      <label class="form-label" for="indiaOptionExpiry"
-                        >Expiry</label
-                      >
-                      <select class="form-select" id="indiaOptionExpiry">
-                        <option value="">Nearest</option>
-                      </select>
-                    </div>
-                    <div class="col-md-4 d-flex align-items-end">
-                      <button
-                        type="button"
-                        class="btn btn-gradient-primary w-100"
-                        id="fetchIndiaOptionChainBtn"
-                      >
-                        <i class="fas fa-search me-2"></i>Fetch Chain
-                      </button>
-                    </div>
-                  </div>
-
-                  <div
-                    id="indiaOptionsUnavailable"
-                    class="alert alert-warning"
-                    style="display: none"
-                  >
-                    NSE option chain data is not available for BSE symbols --
-                    F&amp;O trades on NSE. Switch the market selector to
-                    "India - NSE" to use this panel.
-                  </div>
-
-                  <div id="indiaOptionsContent" style="display: none">
-                    <div class="row text-center mb-3">
-                      <div class="col-6 col-md-3">
-                        <small class="text-muted d-block">Underlying</small>
-                        <strong id="indiaOptionUnderlying">--</strong>
-                      </div>
-                      <div class="col-6 col-md-3">
-                        <small class="text-muted d-block">OI-based PCR</small>
-                        <strong id="indiaOptionPcr">--</strong>
-                      </div>
-                      <div class="col-6 col-md-3">
-                        <small class="text-muted d-block">Max Pain Strike</small>
-                        <strong id="indiaOptionMaxPain">--</strong>
-                      </div>
-                      <div class="col-6 col-md-3">
-                        <small class="text-muted d-block">Sentiment</small>
-                        <strong id="indiaOptionSentiment">--</strong>
-                      </div>
-                    </div>
-
-                    <div id="oiChart" style="height: 400px"></div>
-
-                    <div class="table-responsive mt-3">
-                      <table
-                        class="table table-dark table-sm table-striped"
-                        id="indiaOptionChainTable"
-                      >
-                        <thead>
-                          <tr>
-                            <th>Call OI</th>
-                            <th>Call LTP</th>
-                            <th>Call IV</th>
-                            <th>Strike</th>
-                            <th>Put IV</th>
-                            <th>Put LTP</th>
-                            <th>Put OI</th>
-                          </tr>
-                        </thead>
-                        <tbody></tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+        <div>
+          <h3 class="panel-title" style="margin-bottom: var(--space-3);">Greeks</h3>
+          <div id="greeksList"></div>
         </div>
       </div>
     </div>
 
-    <!-- Enhanced Loading Overlay -->
-    <div id="loadingOverlay" class="loading-overlay">
-      <div class="loading-spinner"></div>
-    </div>
-
-    <!-- Add Position Modal -->
-    <div
-      class="modal fade"
-      id="addPositionModal"
-      tabindex="-1"
-      aria-labelledby="addPositionModalLabel"
-      aria-hidden="true"
-    >
-      <div class="modal-dialog">
-        <div class="modal-content bg-dark text-light">
-          <div class="modal-header">
-            <h5 class="modal-title" id="addPositionModalLabel">
-              Add Portfolio Position
-            </h5>
-            <button
-              type="button"
-              class="btn-close btn-close-white"
-              data-bs-dismiss="modal"
-              aria-label="Close"
-            ></button>
-          </div>
-          <div class="modal-body">
-            <form id="addPositionForm">
-              <div class="row g-3">
-                <div class="col-6">
-                  <label class="form-label" for="posSymbol">Symbol</label>
-                  <input
-                    type="text"
-                    class="form-control"
-                    id="posSymbol"
-                    placeholder="AAPL"
-                    required
-                  />
-                </div>
-                <div class="col-6">
-                  <label class="form-label" for="posOptionType"
-                    >Option Type</label
-                  >
-                  <select class="form-select" id="posOptionType">
-                    <option value="call">Call</option>
-                    <option value="put">Put</option>
-                  </select>
-                </div>
-                <div class="col-6">
-                  <label class="form-label" for="posStrike">Strike Price</label>
-                  <input
-                    type="number"
-                    class="form-control"
-                    id="posStrike"
-                    step="0.01"
-                    required
-                  />
-                </div>
-                <div class="col-6">
-                  <label class="form-label" for="posQuantity"
-                    >Quantity (contracts)</label
-                  >
-                  <input
-                    type="number"
-                    class="form-control"
-                    id="posQuantity"
-                    value="1"
-                    required
-                  />
-                </div>
-                <div class="col-6">
-                  <label class="form-label" for="posPremium"
-                    >Premium Paid</label
-                  >
-                  <input
-                    type="number"
-                    class="form-control"
-                    id="posPremium"
-                    step="0.01"
-                    required
-                  />
-                </div>
-                <div class="col-6">
-                  <label class="form-label" for="posExpiry">Expiry Date</label>
-                  <input
-                    type="date"
-                    class="form-control"
-                    id="posExpiry"
-                    required
-                  />
-                </div>
-                <div class="col-6">
-                  <label class="form-label" for="posUnderlying"
-                    >Underlying Price</label
-                  >
-                  <input
-                    type="number"
-                    class="form-control"
-                    id="posUnderlying"
-                    step="0.01"
-                    required
-                  />
-                </div>
-                <div class="col-6">
-                  <label class="form-label" for="posVolatility"
-                    >Volatility</label
-                  >
-                  <input
-                    type="number"
-                    class="form-control"
-                    id="posVolatility"
-                    step="0.01"
-                    value="0.20"
-                    required
-                  />
-                </div>
-              </div>
-            </form>
-          </div>
-          <div class="modal-footer">
-            <button
-              type="button"
-              class="btn btn-secondary"
-              data-bs-dismiss="modal"
-            >
-              Cancel
-            </button>
-            <button type="button" class="btn btn-primary" id="savePositionBtn">
-              Add Position
-            </button>
-          </div>
-        </div>
+    <div id="howToReadModal" class="drawer" aria-hidden="true">
+      <div class="drawer-header">
+        <h2 class="panel-title">How to Read This Chain</h2>
+        <button class="drawer-close" id="howToReadCloseBtn" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="drawer-body" style="grid-template-columns: 1fr;">
+        <div id="howToReadContent"></div>
       </div>
     </div>
 
-    <!-- Floating Action Button for Quick Actions -->
-    <button class="fab" id="quickActionFab" title="Quick Actions">
-      <i class="fas fa-plus"></i>
-    </button>
+    <div id="notificationStack" class="notification-stack" aria-live="polite"></div>
 
-    <!-- Quick Action Menu -->
-    <div class="quick-action-menu" id="quickActionMenu" style="display: none">
-      <button class="btn btn-sm btn-success mb-2" id="quickPrice">
-        <i class="fas fa-calculator me-2"></i>Quick Price
-      </button>
-
-      <button class="btn btn-sm btn-primary mb-2" id="quickPortfolio">
-        <i class="fas fa-folder-plus me-2"></i>Add to Portfolio
-      </button>
-
-      <button class="btn btn-sm btn-warning" id="quickRisk">
-        <i class="fas fa-shield-alt me-2"></i>Risk Check
-      </button>
-    </div>
-
-    <!-- Enhanced Notification System -->
-    <div
-      id="notificationContainer"
-      style="position: fixed; top: 80px; right: 20px; z-index: 1050"
-    ></div>
-
-    <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
   </body>
 </html>
