@@ -2,9 +2,9 @@
 
 ## Render (primary, free)
 
-This is the current recommended free deployment target (`render.yaml`,
-`requirements.txt`, full feature set including ML pricing — Render's native
-Python runtime has no serverless size cap, unlike Vercel).
+This is the current recommended free deployment target: `render.yaml`
+configures the full feature set from `requirements.txt` with no manual
+setup.
 
 1. Go to [Render](https://render.com) and sign in with GitHub.
 2. **New → Blueprint** → select this repository. Render auto-detects
@@ -59,27 +59,18 @@ docker run -p 8080:8080 option-pricing-platform
 The `Dockerfile` installs `requirements.txt`, exposes port `8080`, and runs
 `gunicorn api.app:app`.
 
-## Vercel (limited support)
+## Vercel
 
-`vercel.json` and `requirements-vercel.txt` exist for a lightweight Vercel
-deployment, but `requirements-vercel.txt` intentionally excludes
-`scikit-learn`/`xgboost`/`joblib` to stay under Vercel's 250MB serverless
-function limit. That means **the ML pricing endpoints
-(`/api/ml/*`) will not work on Vercel** — only Black-Scholes, Binomial, and
-Monte Carlo pricing are available there. Use Railway or Docker for the full
-feature set, including ML pricing.
+`vercel.json` configures a `@vercel/python` build from `api/app.py`, which
+auto-detects `requirements.txt` (there is no separate, reduced dependency
+file — the full dependency set is light enough for Vercel's serverless
+size limit now that ML pricing has been removed). This has not been
+verified against an actual Vercel deployment; treat it as untested until
+confirmed.
 
-India/NSE market data (`jugaad-data`) is light enough to include in the
-Vercel build and is expected to work there, but this has not been verified
-with an actual Vercel deploy — treat it as untested until confirmed. Note
-also that `NSELive`'s session/cookie bootstrap against nseindia.com adds
-real latency on a cold serverless start; expect the first India-market
-request after an idle period to be noticeably slower than subsequent ones.
-
-`api/app.py` previously had an unconditional `import matplotlib.pyplot`
-that was never actually called (the app renders all charts through Plotly)
-but was not in `requirements-vercel.txt` — this would have crashed the app
-at import time on Vercel. That dead import has been removed.
+`NSELive`'s session/cookie bootstrap against nseindia.com adds real
+latency on a cold serverless start; expect the first India-market request
+after an idle period to be noticeably slower than subsequent ones.
 
 ```bash
 npm i -g vercel
@@ -93,6 +84,13 @@ pip install -r requirements.txt   # or: python toggle_features.py full
 python main.py                    # serves on http://localhost:8000
 ```
 
-`toggle_features.py [minimal|light|full]` regenerates `requirements.txt` for
-different deployment sizes — `full` is required for ML pricing
-(`scikit-learn`, `xgboost`) and the other heavy dependencies.
+`toggle_features.py [minimal|full]` regenerates `requirements.txt` --
+`minimal` is core pricing math only (no market data, no charts), `full`
+adds plotting and market data (yfinance, jugaad-data).
+
+To run the test suite:
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pytest tests/ -v
+```

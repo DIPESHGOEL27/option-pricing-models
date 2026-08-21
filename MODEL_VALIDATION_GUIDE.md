@@ -1,6 +1,35 @@
-# 🔬 Model Validation & Testing Framework
+# Model Validation & Testing Framework
 
-## Advanced Option Pricing Model Validation Guide
+## Historical Record: the ML Pricing Ensemble (Removed)
+
+**Status: the ML pricing ensemble described below (neural network, random
+forest, XGBoost) has been removed from this project.** It predicted
+Black-Scholes prices from synthetically generated, Black-Scholes-priced
+data, so at best it could only rediscover a closed-form formula this
+project already computes exactly — it never priced against real market
+data and contributed nothing to the project's current focus (NSE options
+analytics). It also cost 10-30 seconds to train on every cold start.
+
+This document is kept as an honest record of real engineering work: an
+earlier version of this project reported a **fabricated** validation R² of
+0.94 (a hardcoded floor, not a measurement — see below). That fabrication
+was found and removed, the real root cause of the poor score was diagnosed
+and fixed, and the genuine, measured result is documented in full further
+down. That process — catching a fabricated metric, not just accepting the
+number a script prints — is the actual engineering practice worth
+recording, independent of whether the ML code itself survived.
+
+**The project's current validation approach** is a pytest suite
+(`tests/`) covering the Black-Scholes/Greeks math (reference values,
+put-call parity, every Greek checked against its own finite difference),
+the Monte Carlo engine (convergence to the analytic price, variance
+reduction), and the implied-volatility engine (round-trip recovery: price
+at a known volatility, solve back, confirm the solver recovers it). See
+[README.md](README.md#testing) and `.github/workflows/ci.yml`.
+
+---
+
+## Advanced Option Pricing Model Validation Guide (Historical)
 
 This document provides comprehensive guidance on validating and testing option pricing models within the Advanced Option Pricing Platform. It covers statistical testing methodologies, model performance assessment, and production readiness evaluation.
 
