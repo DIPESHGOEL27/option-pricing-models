@@ -53,10 +53,14 @@ except ImportError:
         MONTE_CARLO_AVAILABLE = False
 
 try:
-    from advanced_risk import AdvancedRiskManager, RiskMetrics as RiskMetricsAdvanced, StressTestScenario
+    from .advanced_risk import AdvancedRiskManager, RiskMetrics as RiskMetricsAdvanced, StressTestScenario
     RISK_FEATURES_AVAILABLE = True
 except ImportError:
-    RISK_FEATURES_AVAILABLE = False
+    try:
+        from advanced_risk import AdvancedRiskManager, RiskMetrics as RiskMetricsAdvanced, StressTestScenario
+        RISK_FEATURES_AVAILABLE = True
+    except ImportError:
+        RISK_FEATURES_AVAILABLE = False
 
 # Try to import ML modules
 try:
@@ -80,16 +84,24 @@ except ImportError:
             ML_FEATURES_AVAILABLE = False
 
 try:
-    from model_validation import ModelValidator, BacktestResults
+    from .model_validation import ModelValidator, BacktestResults
     VALIDATION_AVAILABLE = True
 except ImportError:
-    VALIDATION_AVAILABLE = False
+    try:
+        from model_validation import ModelValidator, BacktestResults
+        VALIDATION_AVAILABLE = True
+    except ImportError:
+        VALIDATION_AVAILABLE = False
 
 try:
-    from advanced_models import MonteCarloEngine, HestonCalibration
+    from .advanced_models import MonteCarloEngine, HestonCalibration
     ADVANCED_PRICING_AVAILABLE = True
 except ImportError:
-    ADVANCED_PRICING_AVAILABLE = False
+    try:
+        from advanced_models import MonteCarloEngine, HestonCalibration
+        ADVANCED_PRICING_AVAILABLE = True
+    except ImportError:
+        ADVANCED_PRICING_AVAILABLE = False
 
 # Check overall advanced features availability
 ADVANCED_FEATURES_AVAILABLE = any([
