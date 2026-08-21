@@ -11,8 +11,7 @@ Industry-grade implementation of sophisticated option pricing models including:
 import numpy as np
 import pandas as pd
 from scipy import stats, optimize
-from scipy.special import gamma as gamma_func
-from typing import Dict, List, Tuple, Optional, Union
+from typing import Dict, Tuple, Optional
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -298,8 +297,8 @@ class HestonCalibration:
                 # Calculate error (relative)
                 error = ((model_price - market_price) / market_price)**2
                 total_error += error
-                
-            except:
+
+            except Exception:
                 return 1e6
         
         return total_error
@@ -566,7 +565,7 @@ if __name__ == "__main__":
     
     # Model validation
     validation = ModelValidation.validate_black_scholes_vs_mc(S0, K, T, r, sigma, 'call')
-    print(f"Black-Scholes vs MC Validation:")
+    print("Black-Scholes vs MC Validation:")
     print(f"  BS Price: {validation['black_scholes_price']:.4f}")
     print(f"  MC Price: {validation['monte_carlo_price']:.4f}")
     print(f"  Relative Error: {validation['relative_error']:.4f}")

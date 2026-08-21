@@ -2,8 +2,8 @@ from setuptools import setup, find_packages
 
 setup(
     name="option-pricing-models",
-    version="1.0.0",
-    description="Advanced Option Pricing Platform with ML and Risk Management",
+    version="2.0.0",
+    description="NSE options analytics terminal: live F&O chain, implied volatility solved from real quotes, and model-vs-market fair value",
     author="DIPESH GOEL",
     packages=find_packages(),
     python_requires=">=3.12",
@@ -16,7 +16,7 @@ setup(
         "gunicorn>=20.1.0,<22.0.0",
         "plotly>=5.17.0,<6.0.0",
         "yfinance>=0.2.0,<1.0.0",
-        "matplotlib>=3.6.0,<4.0.0",
+        "jugaad-data>=0.35.0,<1.0.0",
     ],
     entry_points={
         'console_scripts': [

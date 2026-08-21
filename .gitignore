@@ -3,6 +3,12 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Test / coverage artifacts
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
 # Virtual environments
 venv/
 .venv/
@@ -18,9 +24,6 @@ build/
 dist/
 *.egg-info/
 
-# Node
-node_modules/
-
 # Editor / OS
 .DS_Store
 Thumbs.db
@@ -28,6 +31,3 @@ Thumbs.db
 
 # Deployment
 .vercel
-
-# Model artifacts (regenerated on demand)
-models/

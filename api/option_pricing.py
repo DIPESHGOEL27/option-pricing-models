@@ -14,11 +14,8 @@ import pandas as pd
 import warnings
 from scipy.stats import norm
 from scipy.optimize import minimize, brentq
-from scipy.special import erfc
-from typing import Dict, List, Tuple, Optional, Union, Any
+from typing import Dict
 from functools import lru_cache
-from concurrent.futures import ThreadPoolExecutor
-import time
 
 warnings.filterwarnings('ignore')
 
@@ -189,8 +186,7 @@ class AdvancedGreeksCalculator:
         ds = S * 0.01  # 1% of spot price
         dt = 1/365    # 1 day
         dsigma = 0.01 # 1% volatility
-        dr = 0.0001   # 1 basis point
-        
+
         # Speed (third derivative w.r.t. S)
         gamma_up = pricer.calculate_greeks(S + ds, K, T, r, sigma, option_type)['gamma']
         gamma_down = pricer.calculate_greeks(S - ds, K, T, r, sigma, option_type)['gamma']
@@ -246,7 +242,7 @@ class ModelCalibration:
             """Heston price using FFT (simplified implementation)."""
             # This is a simplified version - real implementation would use full FFT
             # For now, we'll use a Monte Carlo approximation
-            from .advanced_models import MonteCarloEngine, HestonCalibration
+            from .advanced_models import MonteCarloEngine
             
             mc_engine = MonteCarloEngine(n_simulations=50000, n_steps=100)
             paths, _ = mc_engine.heston_model(S0, T, r, v0, kappa, theta, sigma_v, rho)
@@ -273,7 +269,7 @@ class ModelCalibration:
                     )
                     market_price = row['market_price']
                     total_error += ((model_price - market_price) / market_price) ** 2
-                except:
+                except Exception:
                     total_error += 1e6
             
             return total_error

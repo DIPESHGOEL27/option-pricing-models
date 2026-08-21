@@ -1,17 +1,22 @@
 from flask import Flask, request, jsonify, render_template
 from flask.json.provider import DefaultJSONProvider
 import numpy as np
-import scipy.stats as si
 from scipy import stats
 import pandas as pd
 import math
-from datetime import datetime, timedelta
+from datetime import datetime
 import json
-import io
-import base64
+import os
+import sys
 import plotly.graph_objs as go
-import plotly.express as px
 from plotly.utils import PlotlyJSONEncoder
+
+# Ensure Python can find sibling modules in this directory even when this
+# file is imported bare (not as the api.app package) -- must happen before
+# the fallback `import module` branches below, which rely on it.
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
 
 # Import market data provider
 try:
@@ -52,15 +57,11 @@ except ImportError:
     except ImportError:
         MONTE_CARLO_AVAILABLE = False
 
-try:
-    from .advanced_models import MonteCarloEngine, HestonCalibration
-    ADVANCED_PRICING_AVAILABLE = True
-except ImportError:
-    try:
-        from advanced_models import MonteCarloEngine, HestonCalibration
-        ADVANCED_PRICING_AVAILABLE = True
-    except ImportError:
-        ADVANCED_PRICING_AVAILABLE = False
+# "Advanced pricing" (reported separately in /api/status) currently tests
+# the exact same module as MONTE_CARLO_AVAILABLE above -- there used to be
+# a second, near-identical try/except here whose only purpose was importing
+# HestonCalibration, which nothing in this app calls.
+ADVANCED_PRICING_AVAILABLE = MONTE_CARLO_AVAILABLE
 
 try:
     from .option_pricing import AdvancedOptionPricer
@@ -77,14 +78,6 @@ ADVANCED_FEATURES_AVAILABLE = any([
     MONTE_CARLO_AVAILABLE, BASIC_MARKET_DATA_AVAILABLE,
     ADVANCED_PRICING_AVAILABLE, INDIA_MARKET_DATA_AVAILABLE
 ])
-
-# Ensure Python can find the modules in the current directory
-import sys
-import os
-# Add the current directory to the Python path if not already there
-current_dir = os.path.dirname(os.path.abspath(__file__))
-if current_dir not in sys.path:
-    sys.path.append(current_dir)
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 

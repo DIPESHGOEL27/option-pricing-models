@@ -10,11 +10,10 @@ Real-time and historical market data integration for:
 """
 
 import yfinance as yf
-import requests
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from datetime import datetime
+from typing import Dict, Optional
 import time
 import warnings
 warnings.filterwarnings('ignore')
@@ -213,7 +212,7 @@ class VolatilityEstimator:
                 model = arch_model(returns * 100, vol='Garch', p=1, q=1)
                 fitted = model.fit(disp='off')
                 vol = fitted.conditional_volatility / 100 * np.sqrt(252)
-            except:
+            except Exception:
                 # Fallback to simple method
                 vol = returns.rolling(window=window).std() * np.sqrt(252)
         
