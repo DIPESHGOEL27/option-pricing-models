@@ -40,10 +40,20 @@ class TestSolveLegIv:
         assert result['skip_reason'] == 'no_trade_or_quote'
 
     def test_price_below_intrinsic_is_rejected(self):
-        # A call at S=110, K=100 has intrinsic value 10 -- a quoted price
+        # A call at S=110, K=100 has discounted intrinsic value ~11.23 -- a quoted price
         # of 5 is arbitrage-violating and must not produce a "solved" IV.
         result = iv_engine.solve_leg_iv('call', 5.0, 110, 100, 0.25, 0.05)
         assert result['skip_reason'] == 'price_below_intrinsic'
+
+    def test_discounted_intrinsic_allows_valid_high_rate_quote(self):
+        # A put at S=24217, K=24350, T=0.0192 (1 week), r=0.182 (observed live carry rate).
+        # Naive intrinsic: K - S = 133.
+        # Discounted intrinsic: K*e^(-rT) - S = 24350*e^(-0.182*0.0192) - 24217 ~= 48.0.
+        # A market quote of 129.73 is below naive intrinsic (133) but above discounted
+        # intrinsic (48.0), and corresponds to a valid implied vol (~16%).
+        result = iv_engine.solve_leg_iv('put', 129.73, 24217, 24350, 0.0192, 0.182)
+        assert 'iv' in result, f"solve failed: {result.get('skip_reason')}"
+        assert 0.05 < result['iv'] < 0.50
 
     def test_far_outside_moneyness_band_is_skipped(self):
         result = iv_engine.solve_leg_iv('call', 1.0, 100, 1000, 0.25, 0.05)
@@ -57,6 +67,34 @@ class TestSolveLegIv:
         result = iv_engine.solve_leg_iv('call', price, 24232, 27000, 0.012, 0.05)
         if 'iv' in result:
             assert bool(result['low_confidence']) is True
+
+
+class TestLegMarketPrice:
+    """_leg_market_price decides whether a leg's bid-ask mid is a
+    trustworthy market price -- the spread must be judged against
+    extrinsic (time) value, not total price, or a wide-but-proportionally-
+    small spread on a deep ITM/OTM leg slips through and produces an
+    implausible solved IV.
+    """
+
+    def test_deep_itm_wide_spread_leg_rejects_mid(self):
+        # Real NIFTY fixture case (tests/fixtures/nifty_chain.json, strike
+        # 21250 CE): open_interest=1, bid=2994.3, ask=3809.6. Spread is only
+        # 24% of the 3401.95 mid (well inside MAX_RELATIVE_SPREAD measured
+        # against total price) but 223% of the leg's ~366 extrinsic value --
+        # this used to solve to 153% IV against NSE's own published 60.4%.
+        S, K, T, r = 24231.85, 21250, 0.01002, 0.2542
+        leg = {'buyPrice1': 2994.3, 'sellPrice1': 3809.6}
+        assert iv_engine._leg_market_price(leg, S, K, T, r, 'call') is None
+
+    def test_low_oi_but_extrinsic_tight_spread_leg_still_solves(self):
+        # Contrast case: a genuinely low-OI leg (thin market) whose spread
+        # is tight relative to its extrinsic value should still be trusted
+        # -- low OI alone must not gate the price, only a spread that
+        # swamps the leg's actual time value should.
+        S, K, T, r = 100.0, 105.0, 0.25, 0.05
+        leg = {'buyPrice1': 4.8, 'sellPrice1': 5.2, 'openInterest': 3}
+        assert iv_engine._leg_market_price(leg, S, K, T, r, 'call') == pytest.approx(5.0)
 
 
 class TestImpliedForwardRate:
@@ -199,6 +237,23 @@ class TestAnalyzeChainAgainstRealFixture:
         # within a broad but not unlimited band -- catches wholesale solver
         # breakage without being a brittle exact-value assertion.
         assert all(0.01 < iv < 1.5 for iv in solved)
+
+    def test_wide_spread_deep_itm_leg_is_not_wildly_mispriced(self, nifty_chain_raw):
+        # Regression for strike 21250 CE: open_interest=1, bid=2994.3,
+        # ask=3809.6 -- a spread that's only 24% of the mid (passed the old
+        # total-price-relative check easily) but 223% of the leg's own
+        # extrinsic value, and used to solve to 153% IV against NSE's own
+        # published 60.4% for the same leg. It must now either be skipped
+        # outright or, if solved, land in a plausible band.
+        analysis = iv_engine.analyze_chain(
+            nifty_chain_raw['rows'], nifty_chain_raw['underlying_value'],
+            nifty_chain_raw['expiry'], fallback_risk_free_rate=0.055,
+        )
+        leg = next(e['ce'] for e in analysis['strikes'] if e['strike'] == 21250)
+        if 'solved_iv' in leg:
+            assert 0.01 < leg['solved_iv'] < 1.5
+        else:
+            assert leg['skip_reason']
 
     def test_skew_fit_produces_tight_residuals(self, nifty_chain_raw):
         analysis = iv_engine.analyze_chain(

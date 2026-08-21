@@ -11,8 +11,8 @@ const BASE_LAYOUT = {
   paper_bgcolor: 'transparent',
   plot_bgcolor: 'transparent',
   font: PLOTLY_FONT,
-  margin: { l: 48, r: 16, t: 16, b: 36 },
-  legend: { orientation: 'h', y: -0.2 },
+  margin: { l: 48, r: 16, t: 16, b: 64 },
+  legend: { orientation: 'h', y: -0.32 },
 };
 
 const CONFIG = { displayModeBar: false, responsive: true };

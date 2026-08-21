@@ -30,14 +30,22 @@ function ivCell(leg) {
     return cell;
   }
   if (leg.solved_iv === undefined || leg.solved_iv === null) {
-    cell.textContent = leg.skip_reason ? '–' : '–';
-    cell.title = leg.skip_reason ? `Not solved: ${leg.skip_reason.replace(/_/g, ' ')}` : '';
+    if (leg.skip_reason) {
+      const marker = el('span', 'iv-marker skipped', '–');
+      marker.title = `Not solved: ${leg.skip_reason.replace(/_/g, ' ')}`;
+      cell.appendChild(marker);
+    } else {
+      cell.textContent = '–';
+    }
     return cell;
   }
-  cell.textContent = `${(leg.solved_iv * 100).toFixed(1)}%`;
+  const valSpan = el('span', '', `${(leg.solved_iv * 100).toFixed(1)}%`);
+  cell.appendChild(valSpan);
+
   if (leg.low_confidence) {
-    cell.title = 'Low confidence: option has very low vega at this price/time to expiry';
-    cell.style.opacity = '0.55';
+    const warn = el('span', 'iv-marker low-confidence', ' ⚠');
+    warn.title = 'Low confidence: option has very low vega at this price/time to expiry';
+    cell.appendChild(warn);
   }
   if (leg.skew_flag && leg.skew_flag !== 'normal') {
     const badge = el('span', `skew-badge ${leg.skew_flag}`, leg.skew_flag);
@@ -85,15 +93,22 @@ export function renderChainTable(container, chainData, { onStrikeClick } = {}) {
   const table = el('table', 'chain-table');
   const thead = el('thead');
   const headRow1 = el('tr');
-  headRow1.appendChild(el('th', 'group-call', 'Calls'));
-  headRow1.appendChild(el('th', '', ''));
-  headRow1.appendChild(el('th', 'group-put', 'Puts'));
+  const thCalls = el('th', 'group-call', 'Calls');
+  thCalls.colSpan = 4;
+  headRow1.appendChild(thCalls);
+  const thStrike = el('th', '', '');
+  headRow1.appendChild(thStrike);
+  const thPuts = el('th', 'group-put', 'Puts');
+  thPuts.colSpan = 4;
+  headRow1.appendChild(thPuts);
+
   const headRow2 = el('tr');
   [
     ['group-call', 'OI'], ['group-call', 'Chg'], ['group-call', 'LTP'], ['group-call', 'IV'],
     ['', 'Strike'],
     ['group-put', 'IV'], ['group-put', 'LTP'], ['group-put', 'Chg'], ['group-put', 'OI'],
   ].forEach(([cls, label]) => headRow2.appendChild(el('th', cls, label)));
+  thead.appendChild(headRow1);
   thead.appendChild(headRow2);
   table.appendChild(thead);
 

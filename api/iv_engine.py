@@ -9,6 +9,7 @@ solver raises on failure -- see _iv_converges below).
 """
 
 from datetime import datetime
+import math
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -106,7 +107,8 @@ def solve_leg_iv(option_type: str, market_price: Optional[float], S: float,
     if S <= 0 or K <= 0:
         return {'skip_reason': 'invalid_spot_or_strike'}
 
-    intrinsic = max(S - K, 0.0) if option_type == 'call' else max(K - S, 0.0)
+    disc_k = K * math.exp(-r * T)
+    intrinsic = max(S - disc_k, 0.0) if option_type == 'call' else max(disc_k - S, 0.0)
     if market_price < intrinsic - 1e-6:
         return {'skip_reason': 'price_below_intrinsic'}
 
@@ -136,17 +138,31 @@ def solve_leg_iv(option_type: str, market_price: Optional[float], S: float,
     return {'iv': float(sigma), 'method': method, 'low_confidence': low_confidence}
 
 
-def _leg_market_price(leg: Dict) -> Optional[float]:
+def _leg_market_price(leg: Dict, S: float, K: float, T: float, r: float,
+                       option_type: str) -> Optional[float]:
     """Prefer the bid-ask mid (a real, tradeable fair-value estimate) over
     last traded price (which can be stale in an illiquid strike); fall back
     to LTP when there's no two-sided quote.
+
+    The spread is judged against the leg's extrinsic (time) value, not its
+    total price. For a deep ITM/OTM leg, intrinsic value dominates the
+    price, so a spread that looks tight relative to the total price can
+    still swamp the extrinsic value an IV solve actually depends on. A real
+    NIFTY chain observed during testing had a strike 14% ITM with
+    open_interest=1, bid=2994.3, ask=3809.6 -- spread only 24% of the
+    3401.95 mid (comfortably inside this cap measured against total price)
+    but 223% of the leg's ~366 extrinsic value, and solved to 153% IV
+    against NSE's own published 60.4% for that same leg.
     """
     bid = leg.get('buyPrice1')
     ask = leg.get('sellPrice1')
     if bid and ask and bid > 0 and ask > 0:
         spread = ask - bid
         mid = (bid + ask) / 2
-        if mid > 0 and spread / mid <= MAX_RELATIVE_SPREAD:
+        disc_k = K * math.exp(-r * T)
+        intrinsic = max(S - disc_k, 0.0) if option_type == 'call' else max(disc_k - S, 0.0)
+        extrinsic = mid - intrinsic
+        if extrinsic > 0 and spread / extrinsic <= MAX_RELATIVE_SPREAD:
             return mid
     ltp = leg.get('lastPrice')
     return ltp if ltp and ltp > 0 else None
@@ -245,7 +261,7 @@ def analyze_chain(rows: List[Dict], underlying_value: float, expiry_str: str,
             if not leg:
                 continue
 
-            market_price = _leg_market_price(leg)
+            market_price = _leg_market_price(leg, underlying_value, strike, T, risk_free_rate, option_type)
             solved = solve_leg_iv(option_type, market_price, underlying_value, strike, T, risk_free_rate)
 
             nse_iv = leg.get('impliedVolatility')
