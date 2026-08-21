@@ -67,6 +67,11 @@ try:
 except ImportError:
     from option_pricing import AdvancedOptionPricer
 
+try:
+    from . import iv_engine
+except ImportError:
+    import iv_engine
+
 # Check overall advanced features availability
 ADVANCED_FEATURES_AVAILABLE = any([
     MONTE_CARLO_AVAILABLE, BASIC_MARKET_DATA_AVAILABLE,
@@ -111,10 +116,16 @@ class NumpyJSONProvider(DefaultJSONProvider):
 
 app.json = NumpyJSONProvider(app)
 
-# Single process-wide pricer instance so its internal LRU caches (see
-# AdvancedOptionPricer._setup_cache in option_pricing.py) actually hit --
-# constructing a fresh instance per request would defeat them.
+# Process-wide singletons so each provider's own instance-level cache
+# (MarketDataProvider.cache, IndiaMarketDataProvider.cache) actually
+# accumulates across requests -- constructing a fresh provider per request,
+# as every route used to, means the cache dict starts empty every time and
+# never hits, so every page load was a cold network fetch regardless of the
+# cache_duration each class declares.
 _option_pricer = AdvancedOptionPricer()
+_market_data_provider = MarketDataProvider() if BASIC_MARKET_DATA_AVAILABLE else None
+_india_market_data_provider = IndiaMarketDataProvider() if INDIA_MARKET_DATA_AVAILABLE else None
+_india_risk_free_rate_provider = IndiaRiskFreeRateProvider() if INDIA_MARKET_DATA_AVAILABLE else None
 
 
 @app.route('/')
@@ -323,7 +334,7 @@ def calculate_monte_carlo():
 def get_market_data(symbol):
     """Get real-time market data"""
     try:
-        market_data = MarketDataProvider()
+        market_data = _market_data_provider
         stock_data = market_data.get_stock_price(symbol.upper())
         
         if 'error' in stock_data:
@@ -617,7 +628,7 @@ def calculate_portfolio_risk():
         confidence_level = float(data.get('confidence_level', 0.95)) if data else 0.95
         time_horizon = int(data.get('time_horizon', 1)) if data else 1
 
-        market_data = MarketDataProvider()
+        market_data = _market_data_provider
 
         # Pull real daily returns for every position's symbol and build a
         # value-weighted portfolio return series -- no synthetic returns.
@@ -886,7 +897,7 @@ def plot_volatility_smile():
             return jsonify({'error': 'Market data features are not available'})
 
         symbol = data['symbol'].upper()
-        market_data = MarketDataProvider()
+        market_data = _market_data_provider
         option_chain = market_data.get_option_chain(symbol)
 
         if 'error' in option_chain:
@@ -957,13 +968,16 @@ def plot_volatility_smile():
 
 @app.route('/api/india/option_chain/<symbol>', methods=['GET'])
 def get_india_option_chain(symbol):
-    """Real NSE F&O option chain with PCR, max pain, and an OI buildup chart."""
+    """Real NSE F&O option chain with PCR, max pain, an OI buildup chart,
+    and per-strike model-vs-market analysis: implied volatility solved from
+    real bid/ask quotes, cross-checked against NSE's own published IV, and
+    flagged rich/cheap relative to a fitted skew curve."""
     try:
         if not INDIA_MARKET_DATA_AVAILABLE:
             return jsonify({'error': 'India market data features are not available'})
 
         expiry = request.args.get('expiry')
-        chain = IndiaMarketDataProvider().get_option_chain(symbol.upper(), expiry)
+        chain = _india_market_data_provider.get_option_chain(symbol.upper(), expiry)
 
         if 'error' in chain:
             return jsonify(chain)
@@ -976,6 +990,29 @@ def get_india_option_chain(symbol):
         strikes = buildup['strikes']
         max_pain_strike = max_pain.get('strike')
         underlying = chain.get('underlying_value')
+
+        expiry_info = iv_engine.time_to_expiry(chain['expiry'])
+        fallback_rate = (
+            _india_risk_free_rate_provider.interpolate_rate(expiry_info['calendar_years'])
+            if expiry_info and _india_risk_free_rate_provider else None
+        )
+        analysis = iv_engine.analyze_chain(rows, underlying, chain['expiry'], fallback_rate)
+
+        skew = None
+        if 'error' not in analysis:
+            skew = iv_engine.fit_skew(analysis['strikes'], underlying)
+            if 'error' not in skew:
+                flags_by_strike = {}
+                for point in skew['points']:
+                    flags_by_strike.setdefault(point['strike'], {})[point['option_type']] = point
+                for entry in analysis['strikes']:
+                    for leg_key, option_type in (('ce', 'call'), ('pe', 'put')):
+                        leg = entry.get(leg_key)
+                        point = flags_by_strike.get(entry['strike'], {}).get(option_type)
+                        if leg and point:
+                            leg['fitted_iv'] = point['fitted_iv']
+                            leg['skew_deviation_sigma'] = point['deviation_sigma']
+                            leg['skew_flag'] = point['flag']
 
         traces = [
             go.Bar(x=strikes, y=buildup['call_oi'], name='Call OI', marker=dict(color='#dc3545')),
@@ -1012,10 +1049,82 @@ def get_india_option_chain(symbol):
             'underlying_value': underlying,
             'expiry': chain['expiry'],
             'expiry_dates': chain['expiry_dates'],
-            'strikes': rows,
+            'strikes': analysis.get('strikes', []) if 'error' not in analysis else [],
             'pcr': pcr,
             'max_pain': max_pain,
-            'plot': json.dumps({'data': traces, 'layout': layout}, cls=PlotlyJSONEncoder)
+            'plot': json.dumps({'data': traces, 'layout': layout}, cls=PlotlyJSONEncoder),
+            'iv_analysis': {
+                'time_to_expiry': analysis.get('time_to_expiry'),
+                'risk_free_rate': analysis.get('risk_free_rate'),
+                'rate_source': analysis.get('rate_source'),
+                'implied_forward': analysis.get('implied_forward'),
+                'summary': analysis.get('summary'),
+                'error': analysis.get('error')
+            },
+            'skew': skew
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+@app.route('/api/india/skew/<symbol>', methods=['GET'])
+def get_india_skew_term_structure(symbol):
+    """Solved-IV skew curve and ATM-IV term structure across real NSE
+    expiries -- e.g. is the market pricing more uncertainty into the
+    monthly expiry than next week's, and how does the smile shape change
+    along the way.
+
+    The underlying NSE fetch is cached per-symbol (not per-expiry) by
+    IndiaMarketDataProvider, so looping over several expiries here costs
+    one network round-trip, not one per expiry.
+    """
+    try:
+        if not INDIA_MARKET_DATA_AVAILABLE:
+            return jsonify({'error': 'India market data features are not available'})
+
+        max_expiries = min(int(request.args.get('max_expiries', 4)), 8)
+
+        first_chain = _india_market_data_provider.get_option_chain(symbol.upper())
+        if 'error' in first_chain:
+            return jsonify(first_chain)
+
+        underlying = first_chain['underlying_value']
+        expiry_dates = first_chain['expiry_dates'][:max_expiries]
+
+        term_structure = []
+        for expiry_str in expiry_dates:
+            chain = _india_market_data_provider.get_option_chain(symbol.upper(), expiry_str)
+            if 'error' in chain:
+                term_structure.append({'expiry': expiry_str, 'error': chain['error']})
+                continue
+
+            expiry_info = iv_engine.time_to_expiry(expiry_str)
+            fallback_rate = (
+                _india_risk_free_rate_provider.interpolate_rate(expiry_info['calendar_years'])
+                if expiry_info and _india_risk_free_rate_provider else None
+            )
+            analysis = iv_engine.analyze_chain(chain['rows'], underlying, expiry_str, fallback_rate)
+            if 'error' in analysis:
+                term_structure.append({'expiry': expiry_str, 'error': analysis['error']})
+                continue
+
+            skew = iv_engine.fit_skew(analysis['strikes'], underlying)
+            term_structure.append({
+                'expiry': expiry_str,
+                'time_to_expiry': analysis['time_to_expiry'],
+                'rate_source': analysis['rate_source'],
+                'risk_free_rate': analysis['risk_free_rate'],
+                'atm_iv': skew.get('atm_iv'),
+                'curve_fit': skew.get('curve_fit'),
+                'residual_std': skew.get('residual_std'),
+                'points_used': len(skew.get('points', [])),
+                'error': skew.get('error')
+            })
+
+        return jsonify({
+            'symbol': symbol.upper(),
+            'underlying_value': underlying,
+            'term_structure': term_structure
         })
 
     except Exception as e:
@@ -1029,11 +1138,11 @@ def get_india_market_sentiment():
             return jsonify({'error': 'India market data features are not available'})
 
         symbol = request.args.get('symbol', 'NIFTY')
-        india_provider = IndiaMarketDataProvider()
+        india_provider = _india_market_data_provider
 
-        india_vix = MarketDataProvider().get_stock_price('^INDIAVIX')
-        nifty = MarketDataProvider().get_stock_price('^NSEI')
-        rates = IndiaRiskFreeRateProvider().get_rates()
+        india_vix = _market_data_provider.get_stock_price('^INDIAVIX')
+        nifty = _market_data_provider.get_stock_price('^NSEI')
+        rates = _india_risk_free_rate_provider.get_rates()
         market_status = india_provider.get_market_status()
 
         pcr = {'error': 'Option chain unavailable'}
@@ -1072,7 +1181,7 @@ def get_india_risk_free_rate():
         if not INDIA_MARKET_DATA_AVAILABLE:
             return jsonify({'error': 'India market data features are not available'})
 
-        return jsonify(IndiaRiskFreeRateProvider().get_rates())
+        return jsonify(_india_risk_free_rate_provider.get_rates())
 
     except Exception as e:
         return jsonify({'error': str(e)})
