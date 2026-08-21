@@ -351,51 +351,61 @@ class RiskMetrics:
     """Risk management and metrics calculation"""
     
     @staticmethod
-    def calculate_greeks_mc(S0: float, K: float, T: float, r: float, 
+    def calculate_greeks_mc(S0: float, K: float, T: float, r: float,
                            sigma: float, option_type: str = 'call',
-                           n_simulations: int = 100000) -> Dict:
-        """Calculate Greeks using finite differences and Monte Carlo"""
-        
-        def price_option(S, vol):
-            mc_engine = MonteCarloEngine(n_simulations=n_simulations, n_steps=100)
-            paths = mc_engine.geometric_brownian_motion(S, T, r, vol)
-            result = mc_engine.price_vanilla_option(paths, K, r, T, option_type)
+                           n_simulations: int = 100000, random_seed: int = 42) -> Dict:
+        """Calculate Greeks using finite differences and Monte Carlo.
+
+        Every bumped valuation reseeds to the same random_seed before
+        drawing, so all valuations see the exact same underlying paths
+        ("common random numbers"). Without this, each bump is an
+        independent MC sample and the finite-difference noise (which does
+        not shrink with simulation count for a fixed number of paths)
+        swamps genuine second-order signal (gamma) and the effect of small
+        bumps (rho): a previous version of this method returned gamma with
+        the wrong sign and order of magnitude, and hardcoded rho to 0.
+        """
+        n_steps = 100
+
+        def price_option(S, vol, rate, T_):
+            np.random.seed(random_seed)
+            mc_engine = MonteCarloEngine(n_simulations=n_simulations, n_steps=n_steps)
+            paths = mc_engine.geometric_brownian_motion(S, T_, rate, vol)
+            result = mc_engine.price_vanilla_option(paths, K, rate, T_, option_type)
             return result['price']
-        
-        # Base price
-        base_price = price_option(S0, sigma)
-        
-        # Delta (∂V/∂S)
+
+        base_price = price_option(S0, sigma, r, T)
+
+        # Delta / Gamma (bump spot)
         dS = 0.01 * S0
-        price_up = price_option(S0 + dS, sigma)
-        price_down = price_option(S0 - dS, sigma)
+        price_up = price_option(S0 + dS, sigma, r, T)
+        price_down = price_option(S0 - dS, sigma, r, T)
         delta = (price_up - price_down) / (2 * dS)
-        
-        # Gamma (∂²V/∂S²)
-        gamma = (price_up - 2 * base_price + price_down) / (dS**2)
-        
-        # Vega (∂V/∂σ)
+        gamma = (price_up - 2 * base_price + price_down) / (dS ** 2)
+
+        # Vega (bump volatility, report per 1% change in sigma -- matching
+        # the analytic Black-Scholes convention in option_pricing.py)
         dvol = 0.01
-        price_vol_up = price_option(S0, sigma + dvol)
-        price_vol_down = price_option(S0, sigma - dvol)
-        vega = (price_vol_up - price_vol_down) / (2 * dvol)
-        
-        # Theta (∂V/∂T) - approximate
-        dT = 1/365  # 1 day
+        price_vol_up = price_option(S0, sigma + dvol, r, T)
+        price_vol_down = price_option(S0, sigma - dvol, r, T)
+        vega = (price_vol_up - price_vol_down) / (2 * dvol) / 100
+
+        # Theta (bump time to expiry back by exactly 1 day, so the raw price
+        # difference already IS the per-day decay -- no rescaling needed)
+        dT = 1 / 365
         if T > dT:
-            mc_engine_theta = MonteCarloEngine(n_simulations=n_simulations, n_steps=100)
-            paths_theta = mc_engine_theta.geometric_brownian_motion(S0, T - dT, r, sigma)
-            result_theta = mc_engine_theta.price_vanilla_option(paths_theta, K, r, T - dT, option_type)
-            price_theta = result_theta['price']
-            theta = (price_theta - base_price) / dT
+            price_theta = price_option(S0, sigma, r, T - dT)
+            theta = price_theta - base_price
         else:
-            theta = 0
-        
-        # Rho (∂V/∂r)
-        dr = 0.01
-        price_r_up = price_option(S0, sigma)  # Would need to modify for different r
-        rho = 0  # Simplified for now
-        
+            theta = 0.0
+
+        # Rho (bump the risk-free rate by 1bp, report per 1% change in r --
+        # matching the analytic Black-Scholes convention in option_pricing.py)
+        dr = 0.0001
+        price_r_up = price_option(S0, sigma, r + dr, T)
+        price_r_down = price_option(S0, sigma, r - dr, T)
+        rho = (price_r_up - price_r_down) / (2 * dr) / 100
+
         return {
             'price': base_price,
             'delta': delta,

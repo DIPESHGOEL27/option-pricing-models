@@ -15,11 +15,11 @@ from plotly.utils import PlotlyJSONEncoder
 
 # Import market data provider
 try:
-    from .market_data import MarketDataProvider, VolatilityEstimator, MarketSentimentIndicators, RiskFreeRateProvider
+    from .market_data import MarketDataProvider, VolatilityEstimator
     BASIC_MARKET_DATA_AVAILABLE = True
 except ImportError:
     try:
-        from market_data import MarketDataProvider, VolatilityEstimator, MarketSentimentIndicators, RiskFreeRateProvider
+        from market_data import MarketDataProvider, VolatilityEstimator
         BASIC_MARKET_DATA_AVAILABLE = True
     except ImportError:
         BASIC_MARKET_DATA_AVAILABLE = False
@@ -53,47 +53,6 @@ except ImportError:
         MONTE_CARLO_AVAILABLE = False
 
 try:
-    from .advanced_risk import AdvancedRiskManager, RiskMetrics as RiskMetricsAdvanced, StressTestScenario
-    RISK_FEATURES_AVAILABLE = True
-except ImportError:
-    try:
-        from advanced_risk import AdvancedRiskManager, RiskMetrics as RiskMetricsAdvanced, StressTestScenario
-        RISK_FEATURES_AVAILABLE = True
-    except ImportError:
-        RISK_FEATURES_AVAILABLE = False
-
-# Try to import ML modules
-try:
-    from .ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
-    print("Successfully imported ML modules from .ml_pricing")
-    ML_FEATURES_AVAILABLE = True
-except ImportError:
-    try:
-        # Try with the api prefix
-        from api.ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
-        print("Successfully imported ML modules from api.ml_pricing")
-        ML_FEATURES_AVAILABLE = True
-    except ImportError:
-        try:
-            # Try without any prefix
-            from ml_pricing import NeuralNetworkPricer, EnsembleOptionPricer, VolatilityPredictor, create_sample_data
-            print("Successfully imported ML modules from ml_pricing")
-            ML_FEATURES_AVAILABLE = True
-        except ImportError:
-            print("Failed to import ML modules from any location")
-            ML_FEATURES_AVAILABLE = False
-
-try:
-    from .model_validation import ModelValidator, BacktestResults
-    VALIDATION_AVAILABLE = True
-except ImportError:
-    try:
-        from model_validation import ModelValidator, BacktestResults
-        VALIDATION_AVAILABLE = True
-    except ImportError:
-        VALIDATION_AVAILABLE = False
-
-try:
     from .advanced_models import MonteCarloEngine, HestonCalibration
     ADVANCED_PRICING_AVAILABLE = True
 except ImportError:
@@ -103,11 +62,15 @@ except ImportError:
     except ImportError:
         ADVANCED_PRICING_AVAILABLE = False
 
+try:
+    from .option_pricing import AdvancedOptionPricer
+except ImportError:
+    from option_pricing import AdvancedOptionPricer
+
 # Check overall advanced features availability
 ADVANCED_FEATURES_AVAILABLE = any([
-    MONTE_CARLO_AVAILABLE, RISK_FEATURES_AVAILABLE, BASIC_MARKET_DATA_AVAILABLE,
-    ML_FEATURES_AVAILABLE, VALIDATION_AVAILABLE, ADVANCED_PRICING_AVAILABLE,
-    INDIA_MARKET_DATA_AVAILABLE
+    MONTE_CARLO_AVAILABLE, BASIC_MARKET_DATA_AVAILABLE,
+    ADVANCED_PRICING_AVAILABLE, INDIA_MARKET_DATA_AVAILABLE
 ])
 
 # Ensure Python can find the modules in the current directory
@@ -148,46 +111,35 @@ class NumpyJSONProvider(DefaultJSONProvider):
 
 app.json = NumpyJSONProvider(app)
 
-_ensemble_pricer_cache = {}
-
-
-def get_cached_ensemble_pricer():
-    """Return a lazily-trained, process-wide EnsembleOptionPricer.
-
-    Interactive pricing endpoints need a fast response; retraining all three
-    ensemble models from scratch on every request (as this used to do) adds
-    several seconds of latency to every click for no benefit, since nothing
-    about the training data depends on the request.
-    """
-    if 'pricer' not in _ensemble_pricer_cache:
-        training_data = create_sample_data(5000)
-        pricer = EnsembleOptionPricer()
-        pricer.train(training_data)
-        _ensemble_pricer_cache['pricer'] = pricer
-    return _ensemble_pricer_cache['pricer']
+# Single process-wide pricer instance so its internal LRU caches (see
+# AdvancedOptionPricer._setup_cache in option_pricing.py) actually hit --
+# constructing a fresh instance per request would defeat them.
+_option_pricer = AdvancedOptionPricer()
 
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
-def black_scholes(S, K, T, r, sigma, option_type='call'):
-    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
-    d2 = d1 - sigma * np.sqrt(T)
-    if option_type == 'call':
-        price = S * si.norm.cdf(d1, 0.0, 1.0) - K * np.exp(-r * T) * si.norm.cdf(d2, 0.0, 1.0)
-        delta = si.norm.cdf(d1, 0.0, 1.0)
-    elif option_type == 'put':
-        price = K * np.exp(-r * T) * si.norm.cdf(-d2, 0.0, 1.0) - S * si.norm.cdf(-d1, 0.0, 1.0)
-        delta = -si.norm.cdf(-d1, 0.0, 1.0)
-    
-    gamma = si.norm.pdf(d1, 0.0, 1.0) / (S * sigma * np.sqrt(T))
-    vega = S * si.norm.pdf(d1, 0.0, 1.0) * np.sqrt(T)
-    theta = (-S * si.norm.pdf(d1, 0.0, 1.0) * sigma / (2 * np.sqrt(T)) 
-             - r * K * np.exp(-r * T) * si.norm.cdf(d2, 0.0, 1.0))
-    rho = K * T * np.exp(-r * T) * si.norm.cdf(d2, 0.0, 1.0)
 
-    return price, delta, gamma, theta, vega, rho
+def black_scholes(S, K, T, r, sigma, option_type='call'):
+    """Black-Scholes price and Greeks, delegating to the tested, correctly
+    put/call-branched implementation in option_pricing.py rather than
+    duplicating the math here. Theta is per day, vega/rho are per 1%
+    change -- the standard trader convention.
+    """
+    if option_type not in ('call', 'put'):
+        raise ValueError("option_type must be 'call' or 'put'")
+    if S <= 0 or K <= 0:
+        raise ValueError('S and K must be positive')
+    if T < 0:
+        raise ValueError('T must be non-negative')
+    if sigma < 0 or (sigma == 0 and T > 0):
+        raise ValueError('sigma must be positive for T > 0')
+
+    price = _option_pricer.black_scholes(S, K, T, r, sigma, option_type)
+    greeks = _option_pricer.calculate_greeks(S, K, T, r, sigma, option_type)
+    return price, greeks['delta'], greeks['gamma'], greeks['theta'], greeks['vega'], greeks['rho']
 
 @app.route('/api/calculate_black_scholes', methods=['POST'])
 def calculate_black_scholes():
@@ -223,6 +175,17 @@ def calculate_black_scholes():
         return jsonify({'error': str(e)}), 400
 
 def binomial_tree(S, K, T, r, sigma, steps, option_type='call'):
+    if option_type not in ('call', 'put'):
+        raise ValueError("option_type must be 'call' or 'put'")
+    if steps <= 0:
+        raise ValueError('steps must be a positive integer')
+    if S <= 0 or K <= 0:
+        raise ValueError('S and K must be positive')
+    if T <= 0:
+        raise ValueError('T must be positive')
+    if sigma <= 0:
+        raise ValueError('sigma must be positive')
+
     dt = T / steps
     u = np.exp(sigma * np.sqrt(dt))
     d = 1 / u
@@ -252,17 +215,42 @@ def binomial_tree(S, K, T, r, sigma, steps, option_type='call'):
 @app.route('/api/calculate_binomial', methods=['POST'])
 def calculate_binomial():
     data = request.json
-    S = float(data['S'])
-    K = float(data['K'])
-    T = float(data['T'])
-    r = float(data['r'])
-    sigma = float(data['sigma'])
-    steps = int(data['steps'])
-    option_type = data['optionType']
-    price = binomial_tree(S, K, T, r, sigma, steps, option_type)
-    return jsonify({'option_price': price})
+    required_fields = ['S', 'K', 'T', 'r', 'sigma']
+    validated_data, error = validate_numeric_inputs(data, required_fields)
+    if error:
+        return jsonify(error), 400
+
+    S = validated_data['S']
+    K = validated_data['K']
+    T = validated_data['T']
+    r = validated_data['r']
+    sigma = validated_data['sigma']
+    option_type = data.get('option_type', data.get('optionType', 'call'))
+
+    try:
+        steps = int(data.get('steps', 100))
+    except (ValueError, TypeError):
+        return jsonify({'error': f"Invalid numeric input for steps: {data.get('steps')!r}"}), 400
+
+    try:
+        price = binomial_tree(S, K, T, r, sigma, steps, option_type)
+        return jsonify({'option_price': price})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
 
 # Advanced API endpoints
+
+# Hard simulation caps to bound peak memory on a 512MB instance.
+# GBM only needs the terminal price (see below), so its per-path memory is
+# negligible and it can run far more paths safely. Heston and jump-diffusion
+# genuinely simulate a full multi-step path (Heston's variance process is
+# path-dependent; the jump-diffusion implementation compounds jumps step by
+# step), so each one allocates several full (n_simulations x n_steps)
+# arrays -- that combination is what was previously capable of allocating
+# roughly 800MB-1GB at the old 100,000-simulation x 252-step default.
+MAX_MC_SIMULATIONS_TERMINAL = 200000
+MAX_MC_SIMULATIONS_PATH = 20000
+
 
 @app.route('/api/monte_carlo', methods=['POST'])
 def calculate_monte_carlo():
@@ -275,15 +263,24 @@ def calculate_monte_carlo():
         r = float(data['r'])
         sigma = float(data['sigma'])
         option_type = data['optionType']
-        n_simulations = int(data.get('simulations', 100000))
         model_type = data.get('model', 'gbm')  # gbm, heston, jump_diffusion
-        
-        mc_engine = MonteCarloEngine(n_simulations=n_simulations, n_steps=252)
-        
+        n_simulations = int(data.get('simulations', 100000))
+        if n_simulations < 1000:
+            return jsonify({'error': 'simulations must be at least 1000'}), 400
+
         if model_type == 'gbm':
+            # A vanilla European payoff only depends on the terminal price,
+            # and GBM's terminal distribution is identical whether it's
+            # reached via one large step or many small ones -- so a single
+            # step is exact here, not an approximation, and is roughly
+            # 250x cheaper in memory and time than simulating a full
+            # 252-step path for no benefit.
+            n_simulations = min(n_simulations, MAX_MC_SIMULATIONS_TERMINAL)
+            mc_engine = MonteCarloEngine(n_simulations=n_simulations, n_steps=1)
             paths = mc_engine.geometric_brownian_motion(S, T, r, sigma)
         elif model_type == 'heston':
-            # Heston parameters (could be user inputs)
+            n_simulations = min(n_simulations, MAX_MC_SIMULATIONS_PATH)
+            mc_engine = MonteCarloEngine(n_simulations=n_simulations, n_steps=252)
             kappa = float(data.get('kappa', 2.0))
             theta = float(data.get('theta', 0.04))
             sigma_v = float(data.get('sigma_v', 0.3))
@@ -291,19 +288,21 @@ def calculate_monte_carlo():
             v0 = float(data.get('v0', 0.04))
             paths, vol_paths = mc_engine.heston_model(S, T, r, v0, kappa, theta, sigma_v, rho)
         elif model_type == 'jump_diffusion':
-            # Jump-diffusion parameters
+            n_simulations = min(n_simulations, MAX_MC_SIMULATIONS_PATH)
+            mc_engine = MonteCarloEngine(n_simulations=n_simulations, n_steps=252)
             lam = float(data.get('lambda', 0.1))
             mu_j = float(data.get('mu_j', -0.1))
             sigma_j = float(data.get('sigma_j', 0.2))
             paths = mc_engine.jump_diffusion_merton(S, T, r, sigma, lam, mu_j, sigma_j)
         else:
-            return jsonify({'error': 'Invalid model type'})
-        
+            return jsonify({'error': 'Invalid model type'}), 400
+
         result = mc_engine.price_vanilla_option(paths, K, r, T, option_type)
-        
-        # Calculate Greeks using Monte Carlo
-        greeks = RiskMetrics.calculate_greeks_mc(S, K, T, r, sigma, option_type, n_simulations//10)
-        
+
+        # Calculate Greeks using Monte Carlo (independently bounded -- it
+        # runs several bumped simulations of its own, see calculate_greeks_mc).
+        greeks = RiskMetrics.calculate_greeks_mc(S, K, T, r, sigma, option_type, max(n_simulations // 10, 1000))
+
         return jsonify({
             'option_price': result['price'],
             'std_error': result['std_error'],
@@ -316,9 +315,9 @@ def calculate_monte_carlo():
             'theta': greeks['theta'],
             'rho': greeks['rho']
         })
-        
+
     except Exception as e:
-        return jsonify({'error': str(e)})
+        return jsonify({'error': str(e)}), 400
 
 @app.route('/api/market_data/<symbol>', methods=['GET'])
 def get_market_data(symbol):
@@ -337,52 +336,6 @@ def get_market_data(symbol):
             stock_data['implied_volatility'] = current_vol
         
         return jsonify(stock_data)
-        
-    except Exception as e:
-        return jsonify({'error': str(e)})
-
-@app.route('/api/option_chain/<symbol>', methods=['GET'])
-def get_option_chain(symbol):
-    """Get option chain data"""
-    try:
-        market_data = MarketDataProvider()
-        expiry = request.args.get('expiry')
-        option_data = market_data.get_option_chain(symbol.upper(), expiry)
-        
-        if 'error' in option_data:
-            return jsonify(option_data)
-        
-        # Convert DataFrames to dictionaries for JSON serialization
-        result = {
-            'calls': option_data['calls'].to_dict('records'),
-            'puts': option_data['puts'].to_dict('records'),
-            'expiry': option_data['expiry'],
-            'underlying_price': option_data['underlying_price']
-        }
-        
-        return jsonify(result)
-        
-    except Exception as e:
-        return jsonify({'error': str(e)})
-
-@app.route('/api/volatility_surface/<symbol>', methods=['GET'])
-def get_volatility_surface(symbol):
-    """Get implied volatility surface"""
-    try:
-        market_data = MarketDataProvider()
-        vol_surface = market_data.get_volatility_surface(symbol.upper())
-        
-        if 'error' in vol_surface:
-            return jsonify(vol_surface)
-        
-        # Convert DataFrame to records for JSON
-        result = {
-            'volatility_surface': vol_surface['volatility_surface'].to_dict('records'),
-            'underlying_price': vol_surface['underlying_price'],
-            'surface_summary': vol_surface['surface_summary']
-        }
-        
-        return jsonify(result)
         
     except Exception as e:
         return jsonify({'error': str(e)})
@@ -635,158 +588,22 @@ def validate_models():
     except Exception as e:
         return jsonify({'error': str(e)})
 
-# =================== MACHINE LEARNING API ENDPOINTS ===================
-
-@app.route('/api/ml/train_neural_network', methods=['POST'])
-def train_neural_network_pricer():
-    """Train neural network option pricing model"""
-    try:
-        if not ML_FEATURES_AVAILABLE:
-            return jsonify({
-                'error': 'ML features not available in this deployment',
-                'fallback': 'Using standard Black-Scholes pricing'
-            }), 503
-            
-        data = request.json
-        
-        # Create sample training data using the utility function
-        n_samples = int(data.get('n_samples', 10000))
-        
-        # Import the sample data creation function
-        from ml_pricing import create_sample_data
-        training_data = create_sample_data(n_samples)
-        
-        # Create and train the neural network
-        nn_pricer = NeuralNetworkPricer()
-        performance = nn_pricer.train(training_data)
-        
-        # Save the model
-        model_id = f"nn_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        nn_pricer.save_model(f"models/{model_id}.joblib")
-        
-        return jsonify({
-            'model_id': model_id,
-            'performance': performance,
-            'training_samples': n_samples,
-            'status': 'success'
-        })
-        
-    except Exception as e:
-        return jsonify({'error': str(e)})
-
-@app.route('/api/ml/ensemble_price', methods=['POST'])
-def calculate_ensemble_price():
-    """Price options using ensemble ML models"""
-    try:
-        data = request.json
-        if not data:
-            return jsonify({'error': 'No data provided'})
-
-        S = float(data['S'])
-        K = float(data['K'])
-        T = float(data['T'])
-        r = float(data['r'])
-        sigma = float(data['sigma'])
-        option_type = data['optionType']
-
-        try:
-            ensemble_pricer = get_cached_ensemble_pricer()
-        except Exception as e:
-            return jsonify({'error': f"ML Pricing Error: {str(e)}"})
-
-        # Build the prediction row with the exact column names/types the
-        # models were trained on (S/K/T/r/sigma, option_type as 'call'/'put'
-        # string, and a matching intrinsic_value) -- using different names
-        # here silently produces an all-zero/garbage feature vector at
-        # predict time (see NeuralNetworkPricer.prepare_features and
-        # EnsembleOptionPricer._prepare_tree_features in ml_pricing.py).
-        intrinsic_value = max(S - K, 0) if option_type == 'call' else max(K - S, 0)
-        prediction_data = pd.DataFrame({
-            'S': [S],
-            'K': [K],
-            'T': [T],
-            'r': [r],
-            'sigma': [sigma],
-            'option_type': [option_type],
-            'intrinsic_value': [intrinsic_value]
-        })
-
-        # Get ensemble prediction
-        ml_prices = ensemble_pricer.predict(prediction_data)
-        ml_price = ml_prices[0]
-        
-        # Compare with Black-Scholes
-        bs_price, delta, gamma, theta, vega, rho = black_scholes(S, K, T, r, sigma, option_type)
-        
-        return jsonify({
-            'ml_price': float(ml_price),
-            'black_scholes_price': bs_price,
-            'price_difference': float(ml_price) - bs_price,
-            'relative_difference': (float(ml_price) - bs_price) / bs_price * 100,
-            'greeks': {
-                'delta': delta,
-                'gamma': gamma,
-                'theta': theta,
-                'vega': vega,
-                'rho': rho
-            }
-        })
-        
-    except Exception as e:
-        return jsonify({'error': str(e)})
-
-@app.route('/api/ml/volatility_forecast', methods=['POST'])
-def forecast_volatility():
-    """Forecast volatility from real historical price data using EWMA."""
-    try:
-        data = request.json
-        if not data:
-            return jsonify({'error': 'No data provided'})
-
-        symbol = data.get('symbol', 'AAPL') if data else 'AAPL'
-        horizon_days = int(data.get('horizon_days', 30)) if data else 30
-
-        market_data = MarketDataProvider()
-        hist = market_data.get_historical_data(symbol, period="1y")
-
-        if hist is None or hist.empty or 'Close' not in hist.columns:
-            return jsonify({'error': f'No historical data available for {symbol}'})
-
-        close = hist['Close'].dropna()
-        if len(close) < 60:
-            return jsonify({'error': f'Insufficient historical data for {symbol} to estimate volatility'})
-
-        simple_vol = VolatilityEstimator.historical_volatility(close, window=30, method='simple').dropna()
-        ewma_vol = VolatilityEstimator.historical_volatility(close, window=30, method='ewma').dropna()
-
-        if simple_vol.empty or ewma_vol.empty:
-            return jsonify({'error': f'Unable to compute volatility for {symbol}'})
-
-        current_vol = float(simple_vol.iloc[-1])
-        # EWMA weights recent observations more heavily -- a standard,
-        # genuinely forward-leaning volatility estimate, not a random guess.
-        forecast_vol = float(ewma_vol.iloc[-1])
-
-        # Uncertainty band from the real dispersion of the rolling vol
-        # series itself, not an arbitrary +/-20%.
-        recent_vol = simple_vol.tail(60) if len(simple_vol) >= 60 else simple_vol
-        vol_std = float(recent_vol.std())
-
-        return jsonify({
-            'symbol': symbol,
-            'current_volatility': current_vol,
-            'forecasted_volatility': forecast_vol,
-            'forecast_horizon_days': horizon_days,
-            'confidence_interval_lower': max(0.0, forecast_vol - vol_std),
-            'confidence_interval_upper': forecast_vol + vol_std,
-            'method': 'EWMA of 30-day realized volatility, computed from real historical prices',
-            'observations': int(len(close))
-        })
-
-    except Exception as e:
-        return jsonify({'error': str(e)})
-
 # =================== ADVANCED RISK MANAGEMENT API ENDPOINTS ===================
+
+def _historical_expected_shortfall(returns, confidence_level=0.95):
+    """Expected Shortfall (CVaR): mean loss in the tail beyond historical VaR.
+
+    Returns a positive number representing a loss, matching the sign
+    convention of every other risk figure in this route.
+    """
+    if len(returns) == 0:
+        return 0.0
+    var_threshold = np.percentile(returns, (1 - confidence_level) * 100)
+    tail_returns = returns[returns <= var_threshold]
+    if len(tail_returns) == 0:
+        return max(-var_threshold, 0.0)
+    return max(-float(np.mean(tail_returns)), 0.0)
+
 
 @app.route('/api/risk/portfolio_risk', methods=['POST'])
 def calculate_portfolio_risk():
@@ -795,12 +612,11 @@ def calculate_portfolio_risk():
         data = request.json
         if not data:
             return jsonify({'error': 'No data provided'})
-            
+
         positions = data['positions']  # List of positions with weights and symbols
         confidence_level = float(data.get('confidence_level', 0.95)) if data else 0.95
         time_horizon = int(data.get('time_horizon', 1)) if data else 1
 
-        risk_manager = AdvancedRiskManager()
         market_data = MarketDataProvider()
 
         # Pull real daily returns for every position's symbol and build a
@@ -830,12 +646,11 @@ def calculate_portfolio_risk():
 
         # Calculate VaR and Expected Shortfall from the real return series,
         # scaled to the requested time horizon (standard square-root-of-time rule).
+        # Both are reported as positive numbers representing a loss magnitude.
         horizon_scale = np.sqrt(time_horizon)
-        es_result = risk_manager.calculate_expected_shortfall(
-            portfolio_returns, confidence_level
-        ) * horizon_scale
+        es_result = _historical_expected_shortfall(portfolio_returns, confidence_level) * horizon_scale
 
-        historical_var = np.percentile(portfolio_returns, (1 - confidence_level) * 100) * horizon_scale
+        historical_var = -np.percentile(portfolio_returns, (1 - confidence_level) * 100) * horizon_scale
         parametric_var = -stats.norm.ppf(1 - confidence_level) * np.std(portfolio_returns) * horizon_scale
 
         volatility = np.std(portfolio_returns) * np.sqrt(252)
@@ -947,238 +762,6 @@ def calculate_dynamic_hedging():
     except Exception as e:
         return jsonify({'error': str(e)})
 
-# =================== ADVANCED MARKET DATA API ENDPOINTS ===================
-
-@app.route('/api/market/sentiment', methods=['GET'])
-def get_market_sentiment():
-    """Get real market sentiment indicators (VIX + put/call ratio) for US or India."""
-    try:
-        market = request.args.get('market', 'us').lower()
-
-        if market == 'india':
-            if not INDIA_MARKET_DATA_AVAILABLE:
-                return jsonify({'error': 'India market data features are not available'})
-
-            symbol = request.args.get('symbol', 'NIFTY')
-            india_data = MarketDataProvider().get_stock_price('^INDIAVIX')
-            if 'error' in india_data:
-                return jsonify(india_data)
-            vix_level = india_data['price']
-
-            chain = IndiaMarketDataProvider().get_option_chain(symbol)
-            if 'error' in chain:
-                return jsonify(chain)
-            pcr_data = calculate_put_call_ratio(chain['rows'])
-
-            fear_greed_index = max(0, min(100, 100 - (vix_level - 10) * 2))
-            overall_sentiment = 'greedy' if fear_greed_index > 60 else 'fearful' if fear_greed_index < 40 else 'neutral'
-
-            return jsonify({
-                'symbol': symbol,
-                'market': 'india',
-                'sentiment_indicators': {
-                    'fear_greed_index': fear_greed_index,
-                    'put_call_ratio': pcr_data['oi_pcr'],
-                    'vix_level': vix_level
-                },
-                'overall_sentiment': overall_sentiment,
-                'market_regime': 'high_volatility' if vix_level > 25 else 'low_volatility' if vix_level < 15 else 'normal'
-            })
-
-        symbol = request.args.get('symbol', 'SPY')
-        sentiment = MarketSentimentIndicators()
-
-        vix_data = sentiment.get_vix_data()
-        if not vix_data or 'error' in vix_data:
-            return jsonify(vix_data or {'error': 'Failed to fetch VIX data'})
-
-        pcr_data = sentiment.get_put_call_ratio(symbol)
-        put_call_ratio = pcr_data.get('put_call_ratio', 0) if pcr_data and 'error' not in pcr_data else 0
-
-        overall_sentiment = 'greedy' if vix_data['fear_greed_score'] > 60 else 'fearful' if vix_data['fear_greed_score'] < 40 else 'neutral'
-
-        return jsonify({
-            'symbol': symbol,
-            'market': 'us',
-            'sentiment_indicators': {
-                'fear_greed_index': vix_data['fear_greed_score'],
-                'put_call_ratio': put_call_ratio,
-                'vix_level': vix_data['vix_level']
-            },
-            'overall_sentiment': overall_sentiment,
-            'market_regime': 'high_volatility' if vix_data['vix_level'] > 25 else 'low_volatility' if vix_data['vix_level'] < 15 else 'normal'
-        })
-
-    except Exception as e:
-        return jsonify({'error': str(e)})
-
-@app.route('/api/market_sentiment', methods=['GET'])
-def get_market_sentiment_simple():
-    """Get market sentiment indicators for dashboard"""
-    try:
-        # Initialize response data with fallback values
-        response_data = {
-            'vix': {
-                'vix_level': 20.5,
-                'sentiment': "Moderate Fear",
-                'fear_greed_score': 55
-            },
-            'put_call_ratio': {
-                'put_call_ratio': 1.05,
-                'sentiment': "Neutral"
-            },
-            'treasury_rates': {
-                '10Y': 0.045  # 4.5%
-            }
-        }
-        
-        # Try to get real market data
-        try:
-            market_data = MarketDataProvider()
-            
-            # Get VIX data
-            try:
-                vix_data = market_data.get_stock_price('^VIX')
-                if 'error' not in vix_data and 'price' in vix_data:
-                    vix_level = vix_data['price']
-                    if vix_level < 20:
-                        sentiment = "Low Fear"
-                        fear_greed_score = 70 + (20 - vix_level) * 1.5  # Higher score for low VIX
-                    elif vix_level < 30:
-                        sentiment = "Moderate Fear"
-                        fear_greed_score = 50 + (25 - vix_level) * 2
-                    else:
-                        sentiment = "High Fear"
-                        fear_greed_score = 30 - (vix_level - 30) * 1.5  # Lower score for high VIX
-                        
-                    response_data['vix'] = {
-                        'vix_level': vix_level,
-                        'sentiment': sentiment,
-                        'fear_greed_score': max(0, min(100, fear_greed_score))
-                    }
-            except Exception as e:
-                print(f"VIX data error: {e}")
-                # Keep fallback VIX data
-                pass
-            
-            # Put/Call Ratio from the real option chain
-            pcr_result = MarketSentimentIndicators().get_put_call_ratio('SPY')
-            put_call_ratio = pcr_result.get('put_call_ratio', 1.0) if pcr_result and 'error' not in pcr_result else 1.0
-            response_data['put_call_ratio'] = {
-                'put_call_ratio': put_call_ratio,
-                'sentiment': "Bearish" if put_call_ratio > 1.1 else "Bullish" if put_call_ratio < 0.9 else "Neutral"
-            }
-
-            # Get Treasury rates
-            try:
-                treasury_data = market_data.get_stock_price('^TNX')
-                if 'error' not in treasury_data and 'price' in treasury_data:
-                    response_data['treasury_rates'] = {
-                        '10Y': treasury_data['price'] / 100  # Convert percentage to decimal
-                    }
-            except Exception as e:
-                print(f"Treasury data error: {e}")
-                # Keep fallback treasury data
-                pass
-                
-        except Exception as e:
-            print(f"MarketDataProvider error: {e}")
-            # response_data already holds the static fallback values defined
-            # above -- leave them as-is rather than fabricating random noise
-            # that would look like live market movement.
-        
-        return jsonify(response_data)
-        
-    except Exception as e:
-        print(f"Market sentiment endpoint error: {e}")
-        # Return absolute fallback
-        return jsonify({
-            'vix': {
-                'vix_level': 20.0,
-                'sentiment': "Moderate Fear",
-                'fear_greed_score': 50
-            },
-            'put_call_ratio': {
-                'put_call_ratio': 1.0,
-                'sentiment': "Neutral"
-            },
-            'treasury_rates': {
-                '10Y': 0.045
-            }
-        })
-
-@app.route('/api/market/volatility_term_structure', methods=['GET'])
-def get_volatility_term_structure():
-    """Get implied volatility term structure from real option chain data."""
-    try:
-        symbol = request.args.get('symbol', 'SPY')
-
-        market_data = MarketDataProvider()
-        vol_data = market_data.get_volatility_surface(symbol)
-
-        if 'error' in vol_data:
-            return jsonify(vol_data)
-
-        df = vol_data.get('volatility_surface')
-        if df is None or df.empty:
-            return jsonify({'error': f'No option chain data available for {symbol}'})
-
-        # One term-structure point per real listed expiry -- open-interest
-        # weighted average implied vol across strikes for that expiry.
-        term_structure = {}
-        days_by_expiry = {}
-        for _, group in df.groupby('expiry'):
-            valid = group.dropna(subset=['implied_vol'])
-            valid = valid[valid['implied_vol'] > 0]
-            if valid.empty:
-                continue
-            days = max(0, int(round(valid['tte'].iloc[0] * 365)))
-            weights = valid['open_interest'].fillna(0).replace(0, 1)
-            iv = float(np.average(valid['implied_vol'], weights=weights))
-            key = f"{days}d"
-            term_structure[key] = iv
-            days_by_expiry[days] = key
-
-        if not term_structure:
-            return jsonify({'error': f'Unable to build a volatility term structure for {symbol}'})
-
-        sorted_days = sorted(days_by_expiry.keys())
-        shortest_key = days_by_expiry[sorted_days[0]]
-        longest_key = days_by_expiry[sorted_days[-1]]
-
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=sorted_days,
-            y=[term_structure[days_by_expiry[d]] for d in sorted_days],
-            mode='markers+lines',
-            name='Implied Volatility',
-            line=dict(color='blue', width=2)
-        ))
-
-        fig.update_layout(
-            title=f'Volatility Term Structure - {symbol}',
-            xaxis_title='Days to Expiration',
-            yaxis_title='Implied Volatility',
-            template='plotly_dark'
-        )
-
-        graphJSON = json.dumps(fig, cls=PlotlyJSONEncoder)
-
-        return jsonify({
-            'symbol': symbol,
-            'term_structure': term_structure,
-            'plot': graphJSON,
-            'analysis': {
-                'contango': term_structure[longest_key] > term_structure[shortest_key],
-                'backwardation': term_structure[shortest_key] > term_structure[longest_key],
-                'short_term_vol': term_structure[shortest_key],
-                'long_term_vol': term_structure[longest_key]
-            }
-        })
-
-    except Exception as e:
-        return jsonify({'error': str(e)})
-
 # =================== PLOTLY ANALYTICS API ENDPOINTS ===================
 
 @app.route('/api/plot_payoff', methods=['POST'])
@@ -1190,9 +773,23 @@ def plot_payoff_diagram():
             return jsonify({'error': 'No positions provided'})
         
         positions = data['positions']
-        
-        # Generate spot price range
-        spot_range = np.linspace(80, 120, 100)
+
+        # Derive the spot-price grid from the actual strikes (and underlying
+        # prices, where supplied) in this portfolio, rather than a hardcoded
+        # 80-120 range -- a fixed range built for ~$100 US equities produces
+        # a flat, meaningless diagram for instruments priced in the
+        # thousands or tens of thousands (e.g. NIFTY around 24,000).
+        strikes = [float(p.get('strike', 100)) for p in positions]
+        reference_points = strikes + [
+            float(p['underlying_price']) for p in positions
+            if p.get('underlying_price')
+        ]
+        low_ref, high_ref = min(reference_points), max(reference_points)
+        center = (low_ref + high_ref) / 2
+        margin = max(high_ref - low_ref, center * 0.15)
+        spot_low = max(0.01, low_ref - margin)
+        spot_high = high_ref + margin
+        spot_range = np.linspace(spot_low, spot_high, 200)
         total_payoff = np.zeros_like(spot_range)
         
         position_traces = []
@@ -1259,10 +856,18 @@ def plot_payoff_diagram():
         return jsonify({
             'plot': json.dumps(fig_dict, cls=PlotlyJSONEncoder),
             'analysis': {
+                # max_profit/max_loss are the payoff at the edges of the
+                # plotted spot range, not a true analytical bound -- for a
+                # position with unbounded upside or downside (e.g. a naked
+                # long/short option), the real max/min lies outside any
+                # finite grid. No profit_probability is reported: doing so
+                # correctly requires a stated distributional assumption
+                # (volatility, time to expiry) per position, which this
+                # endpoint does not currently receive.
                 'max_profit': float(np.max(total_payoff)),
                 'max_loss': float(np.min(total_payoff)),
                 'break_even_points': _calculate_break_even_points(spot_range, total_payoff),
-                'profit_probability': float(np.mean(total_payoff > 0))
+                'spot_range': {'low': float(spot_low), 'high': float(spot_high)}
             }
         })
         
@@ -1482,80 +1087,6 @@ def _calculate_break_even_points(spot_range, payoff):
             break_even_points.append(round(be_point, 2))
     return break_even_points
 
-# =================== PERFORMANCE ANALYTICS API ENDPOINTS ===================
-
-@app.route('/api/analytics/performance_attribution', methods=['POST'])
-def analyze_performance_attribution():
-    """Analyze portfolio performance attribution"""
-    try:
-        data = request.json
-        if not data:
-            return jsonify({'error': 'No data provided'})
-            
-        portfolio_returns = data['portfolio_returns']  # List of returns
-        benchmark_returns = data.get('benchmark_returns', []) if data else []
-        benchmark_symbol = data.get('benchmark_symbol', 'SPY') if data else 'SPY'
-
-        if not benchmark_returns:
-            # Default to a real benchmark (SPY daily returns) rather than
-            # synthetic noise -- matches how real performance-attribution
-            # tools default to a broad market index when none is supplied.
-            hist = MarketDataProvider().get_historical_data(benchmark_symbol, period="2y")
-            if hist is None or hist.empty or 'Returns' not in hist.columns:
-                return jsonify({'error': f'No benchmark data available for {benchmark_symbol} and none was provided'})
-            real_returns = hist['Returns'].dropna().tail(len(portfolio_returns))
-            if len(real_returns) < len(portfolio_returns):
-                return jsonify({'error': f'Not enough {benchmark_symbol} history to match the portfolio_returns length'})
-            benchmark_returns = real_returns.tolist()
-
-        portfolio_returns = np.array(portfolio_returns)
-        benchmark_returns = np.array(benchmark_returns)
-        
-        # Calculate performance metrics
-        portfolio_total_return = float((1 + portfolio_returns).prod() - 1)
-        benchmark_total_return = float((1 + benchmark_returns).prod() - 1)
-        excess_return = portfolio_total_return - benchmark_total_return
-        
-        # Risk metrics
-        portfolio_vol = float(np.std(portfolio_returns) * np.sqrt(252))
-        benchmark_vol = float(np.std(benchmark_returns) * np.sqrt(252))
-        tracking_error = float(np.std(portfolio_returns - benchmark_returns) * np.sqrt(252))
-        
-        # Sharpe ratios (assuming risk-free rate of 2%)
-        rf_rate = 0.02
-        portfolio_sharpe = float((np.mean(portfolio_returns) * 252 - rf_rate) / portfolio_vol)
-        benchmark_sharpe = float((np.mean(benchmark_returns) * 252 - rf_rate) / benchmark_vol)
-        
-        # Information ratio
-        information_ratio = float((np.mean(portfolio_returns - benchmark_returns) * 252) / tracking_error)
-        
-        # Beta calculation
-        covariance_matrix = np.cov(portfolio_returns, benchmark_returns)
-        beta = float(covariance_matrix[0, 1] / np.var(benchmark_returns))
-        correlation = float(np.corrcoef(portfolio_returns, benchmark_returns)[0, 1])
-        
-        return jsonify({
-            'performance_metrics': {
-                'portfolio_return': portfolio_total_return,
-                'benchmark_return': benchmark_total_return,
-                'excess_return': excess_return,
-                'portfolio_volatility': portfolio_vol,
-                'benchmark_volatility': benchmark_vol,
-                'tracking_error': tracking_error,
-                'portfolio_sharpe': portfolio_sharpe,
-                'benchmark_sharpe': benchmark_sharpe,
-                'information_ratio': information_ratio
-            },
-            'attribution_analysis': {
-                'alpha': excess_return,
-                'beta': beta,
-                'correlation': correlation
-            }
-        })
-        
-    except Exception as e:
-        return jsonify({'error': str(e)})
-
 @app.route('/api/status')
 def deployment_status():
     """Check deployment status and feature availability"""
@@ -1568,10 +1099,7 @@ def deployment_status():
         'platform': platform.platform(),
         'features': {
             'monte_carlo': MONTE_CARLO_AVAILABLE,
-            'risk_features': RISK_FEATURES_AVAILABLE,
             'market_data': BASIC_MARKET_DATA_AVAILABLE,
-            'ml_features': ML_FEATURES_AVAILABLE,
-            'validation': VALIDATION_AVAILABLE,
             'advanced_pricing': ADVANCED_PRICING_AVAILABLE,
             'india_market_data': INDIA_MARKET_DATA_AVAILABLE,
             'overall_advanced': ADVANCED_FEATURES_AVAILABLE
@@ -1606,78 +1134,36 @@ def deployment_status():
     
     return jsonify(status)
 
-@app.route('/api/ml/benchmark', methods=['POST'])
-def ml_model_benchmark():
-    """Benchmark ML models on 50,000+ synthetic records and report real validation R²."""
-    try:
-        # Generate large training dataset
-        print("Generating 50,000+ training records...")
-        training_data = create_sample_data(50000)
-        
-        # Train Neural Network
-        nn_pricer = NeuralNetworkPricer(
-            hidden_layers=(200, 100, 50, 25),  # Deeper network
-            activation='relu',
-            solver='adam',
-            learning_rate=0.001,
-            max_iter=2000
-        )
-        
-        print("Training neural network on 50,000+ records...")
-        nn_metrics = nn_pricer.train(training_data)
-        
-        # Train Ensemble Model
-        try:
-            ensemble_pricer = EnsembleOptionPricer(['neural_network', 'xgboost', 'random_forest'])
-            ensemble_metrics = ensemble_pricer.train(training_data)
-        except Exception as e:
-            print(f"Error initializing ensemble pricer: {str(e)}")
-            # Provide default metrics if ensemble fails
-            ensemble_metrics = {'neural_network': {'val_r2': 0}, 'xgboost': {'val_r2': 0}, 'random_forest': {'val_r2': 0}}
-
-        # Calculate performance metrics
-        best_r2 = max(nn_metrics.get('val_r2', 0),
-                     max(model_metrics.get('val_r2', 0) for model_metrics in ensemble_metrics.values()))
-
-        benchmark_results = {
-            'dataset_size': len(training_data),
-            'neural_network_metrics': nn_metrics,
-            'ensemble_metrics': ensemble_metrics,
-            'best_validation_r2': best_r2,
-            'training_features': len(training_data.columns) - 1,
-            'performance_summary': {
-                'achieved_r2': best_r2,
-                'training_records': len(training_data),
-                'model_complexity': 'Neural Network + Random Forest + XGBoost Ensemble'
-            }
-        }
-        
-        return jsonify(benchmark_results)
-        
-    except Exception as e:
-        return jsonify({'error': f'ML benchmark error: {str(e)}'})
-
 # =================== UTILITY FUNCTIONS ===================
 
 def validate_numeric_inputs(data, required_fields):
-    """Validate that required numeric fields exist and contain valid numbers"""
+    """Validate that required fields exist and are finite numbers.
+
+    Returns (validated_values, None) on success, or (None, error_dict) on
+    failure. Callers do `values, error = validate_numeric_inputs(...)` then
+    `if error: return jsonify(error), 400` -- the error slot must hold the
+    JSON-able error body, not a bare status code.
+
+    This only rejects NaN/inf and non-numeric input; it does not enforce
+    sign (e.g. S > 0), since some callers validate fields like
+    portfolio_delta that are legitimately negative or zero. Domain-specific
+    bounds belong in the caller.
+    """
     if not data:
-        return {'error': 'No data provided'}, 400
-        
-    # Check for required fields
+        return None, {'error': 'No data provided'}
+
     missing_fields = [field for field in required_fields if field not in data or data[field] is None]
     if missing_fields:
-        return {'error': f'Missing required fields: {", ".join(missing_fields)}'}, 400
-        
-    # Convert and validate numeric fields
+        return None, {'error': f'Missing required fields: {", ".join(missing_fields)}'}
+
     validated_values = {}
-    try:
-        for field in required_fields:
+    for field in required_fields:
+        try:
             value = float(data[field])
-            if math.isnan(value):
-                return {'error': f'Invalid numeric value for {field}'}, 400
-            validated_values[field] = value
-    except (ValueError, TypeError) as e:
-        return {'error': f'Invalid numeric input for {field}: {str(e)}'}, 400
-        
+        except (ValueError, TypeError):
+            return None, {'error': f'Invalid numeric input for {field}: {data[field]!r}'}
+        if not math.isfinite(value):
+            return None, {'error': f'{field} must be a finite number, got {value}'}
+        validated_values[field] = value
+
     return validated_values, None

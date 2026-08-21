@@ -277,38 +277,39 @@ class RiskFreeRateProvider:
         }
     
     def get_treasury_rates(self) -> Dict:
-        """Get current US Treasury rates"""
+        """Get current US Treasury rates.
+
+        Returns only maturities that were actually fetched -- a failure on
+        one symbol no longer discards real rates already fetched for
+        others, and if nothing could be fetched this returns an explicit
+        error rather than inventing plausible-looking numbers.
+        """
         rates = {}
-        
-        try:
-            # Use Yahoo Finance for treasury rates
-            for period, symbol in self.treasury_symbols.items():
+
+        for period, symbol in self.treasury_symbols.items():
+            try:
                 ticker = yf.Ticker(symbol)
                 hist = ticker.history(period="5d")
                 if len(hist) > 0:
-                    current_rate = hist['Close'].iloc[-1] / 100  # Convert percentage to decimal
-                    rates[period] = current_rate
-        except Exception as e:
-            print(f"Error fetching treasury rates: {str(e)}")
-            # Fallback rates
-            rates = {
-                '1M': 0.05,
-                '3M': 0.052,
-                '6M': 0.054,
-                '1Y': 0.056,
-                '2Y': 0.058,
-                '5Y': 0.060,
-                '10Y': 0.062,
-                '30Y': 0.064
-            }
-        
+                    rates[period] = float(hist['Close'].iloc[-1]) / 100  # percentage to decimal
+            except Exception as e:
+                print(f"Error fetching treasury rate for {period} ({symbol}): {str(e)}")
+
+        if not rates:
+            return {'error': 'Failed to fetch any treasury rates'}
+
         return rates
     
-    def interpolate_rate(self, time_to_maturity: float) -> float:
-        """Interpolate risk-free rate for specific maturity"""
+    def interpolate_rate(self, time_to_maturity: float) -> Optional[float]:
+        """Interpolate risk-free rate for a specific maturity.
+
+        Returns None if no real treasury rates could be fetched, rather
+        than raising on an empty interpolation range or fabricating a rate.
+        """
         rates = self.get_treasury_rates()
-        
-        # Define maturity points in years
+        if 'error' in rates:
+            return None
+
         maturities = {
             '1M': 1/12,
             '3M': 3/12,
@@ -319,23 +320,23 @@ class RiskFreeRateProvider:
             '10Y': 10,
             '30Y': 30
         }
-        
-        # Create arrays for interpolation
+
         times = []
         rate_values = []
-        
         for period, rate in rates.items():
             if period in maturities:
                 times.append(maturities[period])
                 rate_values.append(rate)
-        
-        # Linear interpolation
+
+        if not times:
+            return None
+
         if time_to_maturity <= min(times):
             return rate_values[0]
         elif time_to_maturity >= max(times):
             return rate_values[-1]
         else:
-            return np.interp(time_to_maturity, times, rate_values)
+            return float(np.interp(time_to_maturity, times, rate_values))
 
 
 class MarketSentimentIndicators:
